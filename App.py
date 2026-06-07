@@ -6,12 +6,31 @@ from datetime import date, timedelta
 
 st.set_page_config(page_title="Trading Plan Harian + ARA/ARB Alert", page_icon="📈", layout="wide")
 
-# Gaya Tampilan Premium Bertema Gelap (Dark Mode)
+# --- PERBAIKAN TOTAL SCRIPT CSS (Warna Teks Kotak Metrik Dipaksa Putih Bersih) ---
 st.markdown("""
     <style>
-    .reportview-container { background: #0e1117; }
-    .stMetric { background-color: #1f2937; padding: 10px; border-radius: 10px; border: 1px solid #374151; }
-    h3 { color: #10B981; }
+    /* Background utama halaman */
+    .main { background-color: #0e1117; }
+    
+    /* Box Metrik */
+    div[data-testid="stMetric"] {
+        background-color: #1f2937 !important;
+        padding: 15px !important;
+        border-radius: 10px !important;
+        border: 1px solid #374151 !important;
+    }
+    
+    /* Warna teks Judul Metrik (Atas) */
+    div[data-testid="stMetricLabel"] > div {
+        color: #9ca3af !important;
+        font-weight: bold !important;
+    }
+    
+    /* Warna teks Angka Utama/Harga Metrik (Tengah) */
+    div[data-testid="stMetricValue"] > div {
+        color: #ffffff !important;
+        font-weight: bold !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -31,7 +50,6 @@ try:
         data_saham = yf.download(ticker_code, start=start_date, end=end_date, interval="1d")
         
     if not data_saham.empty:
-        # Pembersihan Multi-Index Kolom dari yfinance
         if isinstance(data_saham.columns, pd.MultiIndex):
             data_saham.columns = data_saham.columns.get_level_values(0)
             
@@ -39,7 +57,6 @@ try:
             if isinstance(data_saham[col], pd.DataFrame):
                 data_saham[col] = data_saham[col].iloc[:, 0]
 
-        # Ekstrak data harga ke bentuk Array
         open_arr = data_saham['Open'].values
         high_arr = data_saham['High'].values
         low_arr = data_saham['Low'].values
@@ -51,34 +68,29 @@ try:
         perubahan = harga_terakhir - harga_sebelumnya
         persentase_ubah = (perubahan / harga_sebelumnya) * 100
 
-        # Hitung Indikator Rata-rata Volume 20 Hari
         data_saham['Vol_Avg'] = data_saham['Volume'].rolling(window=20).mean()
         vol_avg = float(data_saham['Vol_Avg'].iloc[-1])
 
-        # --- LOGIKA BARU: DETEKSI POTENSI ARA / ARB (VOLATILITAS EKSTREM) ---
+        # --- LOGIKA DETEKSI POTENSI ARA / ARB ---
         status_ekstrem = "NORMAL"
         pesan_ekstrem = ""
-        warna_box = "#1f2937" # default abu-abu
+        warna_box = "#1f2937"
 
-        # Cek apakah volume melonjak di atas 2.5 kali lipat dari rata-rata biasanya
         ledakan_volume = volume_arr[-1] > (2.5 * vol_avg)
-        
-        # Proksi ARA: Harga close sama dengan atau mendekati High, persentase naik tinggi, volume meledak
         harga_terkunci_atas = (high_arr[-1] - harga_terakhir) <= (0.01 * (high_arr[-1] - low_arr[-1]) if (high_arr[-1] - low_arr[-1]) > 0 else 1)
+        
         if ledakan_volume and harga_terkunci_atas and persentase_ubah > 4:
             status_ekstrem = "ARA_POTENTIAL"
-            warna_box = "#10B981" # Hijau Sukses
+            warna_box = "#10B981"
             pesan_ekstrem = "🔥 KEPUTUSAN ARA / MOMENTUM BOOM: Buyer menguasai 100% papan perdagangan. Volume meledak masif! Rekomendasi: HOLD/BUY ON OPEN besok pagi jika belum punya barang, ikuti momentum searah!"
 
-        # Proksi ARB: Harga close sama dengan atau mendekati Low, persentase turun tajam
         harga_terkunci_bawah = (harga_terakhir - low_arr[-1]) <= (0.01 * (high_arr[-1] - low_arr[-1]) if (high_arr[-1] - low_arr[-1]) > 0 else 1)
         if harga_terkunci_bawah and persentase_ubah < -4:
             status_ekstrem = "ARB_WARNING"
-            warna_box = "#EF4444" # Merah Bahaya
+            warna_box = "#EF4444"
             pesan_ekstrem = "🚨 PERINGATAN ARB / PANIC SELLING: Seller mengunci harga di batas terendah harian tanpa perlawanan. Rekomendasi: JANGAN FOMO MASUK, JUAL/AVOID terlebih dahulu demi keamanan modal Anda!"
 
-
-        # --- PEMBACAAN 5 POLA CANDLESTICK HARIAN ---
+        # --- PEMBACAAN 5 POLA CANDLESTICK ---
         pola_terdeteksi = []
         if len(close_arr) >= 4:
             body_1 = abs(close_arr[-1] - open_arr[-1])
@@ -103,19 +115,18 @@ try:
             if ushadow_1 >= 2 * body_1 and lshadow_1 <= 0.2 * body_1 and body_1 > 0:
                 pola_terdeteksi.append("📐 Inverted Hammer")
 
-        # Hitung Pivot Support & Resistance
+        # Hitung Pivot S&R
         data_1w = data_saham.tail(5)
         h_1w, l_1w, c_1w = float(data_1w['High'].max()), float(data_1w['Low'].min()), float(data_1w['Close'].iloc[-1])
         pivot = (h_1w + l_1w + c_1w) / 3
         r1, r2 = (2 * pivot) - l_1w, pivot + (h_1w - l_1w)
         s1, s2 = (2 * pivot) - h_1w, pivot - (h_1w - l_1w)
 
-        # Nilai Trading Plan Setup
         buy_area_bawah, buy_area_atas = int(s1), int(harga_terakhir)
         stop_loss = int(s2 * 0.99)
         tp1, tp2 = int(r1), int(r1 * 1.03)
 
-        # --- METRIKS UTAMA ATAS DASHBOARD ---
+        # Tampilan 3 Kolom Metrik Atas
         col_m1, col_m2, col_m3 = st.columns(3)
         col_m1.metric("EMITEN SAHAM", f"{ticker_input}.JK", "TF: HARIAN (1D)")
         col_m2.metric("HARGA CLOSE TERAKHIR", f"Rp {harga_terakhir:,.0f}", f"{perubahan:+,.0f} ({persentase_ubah:+.2f}%)")
@@ -123,11 +134,9 @@ try:
 
         st.markdown("---")
 
-        # --- TAMPILAN DATA & GRAFIK CANDLE ---
         col_left, col_right = st.columns([1, 1.2])
 
         with col_left:
-            # 1. BLOK MONITORING ARA / ARB EKSTREM
             st.subheader("🚨 MONITORING VOLATILITAS EKSTREM")
             if status_ekstrem != "NORMAL":
                 st.markdown(f"""
@@ -140,7 +149,6 @@ try:
 
             st.write("---")
             
-            # 2. PANEL SINYAL CANDLESTICK
             st.subheader("🔮 PEMBACAAN CANDLE & SINYAL BESOK")
             if pola_terdeteksi and status_ekstrem != "ARB_WARNING":
                 for pola in pola_terdeteksi:
@@ -151,13 +159,12 @@ try:
                     </div>
                 """, unsafe_allow_html=True)
             elif status_ekstrem == "ARB_WARNING":
-                st.error("❌ **Sinyal Candlestick Dimatikan:** Terdeteksi kepanikan (Panic Selling), abaikan semua pola pola buy sampai harga stabil.")
+                st.error("❌ **Sinyal Candlestick Dimatikan:** Terdeteksi kepanikan (Panic Selling), abaikan semua pola buy sampai harga stabil.")
             else:
                 st.write("• Tidak ada 5 pola bullish candlestick utama malam ini. Jalankan taktik antre beli bawah.")
 
             st.write("---")
             
-            # 3. AREA SETUP STRATEGI
             st.subheader("🏹 TRADING PLAN SETUP")
             st.info(f"🛒 **BUY AREA:** Rp {buy_area_bawah:,.0f} - Rp {buy_area_atas:,.0f}")
             st.error(f"⚠️ **STOP LOSS (SL):** Rp {stop_loss:,.0f}")
