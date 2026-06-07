@@ -7,7 +7,7 @@ import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
 
-st.set_page_config(page_title="Trading Plan Pro + Multi-Source News", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Trading Plan Pro + Dividen + News", page_icon="📈", layout="wide")
 
 # --- STYLE PREMIUM ANTI-BLUR (Warna Teks Putih Terang) ---
 st.markdown("""
@@ -24,15 +24,15 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🦅 DASHBOARD TRADING PLAN HARIAN & AGREGATOR BERITA INDONESIA")
-st.write(f"Analisis Teknikal + Integrasi Google News (CNBC, Kontan, Bisnis.com) — Update: {date.today().strftime('%d %B %Y')}")
+st.title("🦅 DASHBOARD TRADING PLAN HARIAN & AGREGATOR BERITA")
+st.write(f"Analisis Teknikal, Jadwal Dividen & Sentimen Pasar — Update: {date.today().strftime('%d %B %Y')}")
 
-ticker_input = st.text_input("Masukkan Kode Saham (Contoh: BRMS, BBCA, TLKM)", "BRMS").upper()
+ticker_input = st.text_input("Masukkan Kode Saham (Contoh: BRMS, BBCA, TLKM)", "BBCA").upper()
 ticker_code = f"{ticker_input}.JK"
 
 st.markdown("---")
 
-# --- FUNGSI AMBIL BERITA DARI GOOGLE NEWS INDONESIA (NATIVE PYTHON) ---
+# --- FUNGSI AMBIL BERITA DARI GOOGLE NEWS INDONESIA ---
 def ambil_berita_indonesia(ticker):
     daftar_berita = []
     try:
@@ -44,13 +44,12 @@ def ambil_berita_indonesia(ticker):
             xml_data = response.read()
             
         root = ET.fromstring(xml_data)
-        for item in root.findall('.//item')[:5]: # Ambil 5 berita teratas
+        for item in root.findall('.//item')[:5]:
             title = item.find('title').text
             link = item.find('link').text
             pub_date = item.find('pubDate').text
             source = item.find('source').text if item.find('source') is not None else "Sumber Lokal"
             
-            # Rapikan judul berita dari embel-embel nama media di akhir judul
             if " - " in title:
                 title = title.rsplit(" - ", 1)[0]
                 
@@ -63,8 +62,18 @@ try:
     start_date = date.today() - timedelta(days=365)
     end_date = date.today()
     
-    with st.spinner('Memindai data pasar dan agregator berita lokal...'):
+    with st.spinner('Memindai grafik, jadwal dividen, dan agregator berita...'):
         data_saham = yf.download(ticker_code, start=start_date, end=end_date, interval="1d")
+        
+        # Ambil Profil Lengkap Emiten untuk Data Dividen
+        ticker_obj = yf.Ticker(ticker_code)
+        try:
+            info_saham = ticker_obj.info
+            hist_div = ticker_obj.dividends
+        except:
+            info_saham = {}
+            hist_div = pd.Series(dtype=float)
+
         berita_lokal = ambil_berita_indonesia(ticker_input)
         
     if not data_saham.empty:
@@ -198,6 +207,45 @@ try:
             fig.update_layout(template="plotly_dark", margin=dict(l=10, r=10, t=10, b=10), height=380)
             st.plotly_chart(fig, use_container_width=True)
             
+            # --- SEKSI BARU: INFO DIVIDEN (CUM & EX DATE) ---
+            st.write("---")
+            st.subheader("💰 INFO DIVIDEN (CUM & EX DATE)")
+            
+            div_yield = info_saham.get('dividendYield', None)
+            ex_div_date_unix = info_saham.get('exDividendDate', None)
+            
+            ex_div_date_str = "Belum Ada Jadwal"
+            cum_div_date_str = "Belum Ada Jadwal"
+            
+            # Jika ada jadwal ex-date dari Yahoo
+            if ex_div_date_unix:
+                ex_date_obj = pd.to_datetime(ex_div_date_unix, unit='s')
+                ex_div_date_str = ex_date_obj.strftime('%d %B %Y')
+                # Cum date bursa regular umumnya 1 hari kerja sebelum Ex-Date
+                cum_date_obj = ex_date_obj - pd.offsets.BDay(1)
+                cum_div_date_str = cum_date_obj.strftime('%d %B %Y')
+                
+            last_div_date_str = "-"
+            last_cum_date_str = "-"
+            last_div_amount = 0
+            
+            # Tarik riwayat dividen terakhir
+            if not hist_div.empty:
+                last_ex_date = hist_div.index[-1]
+                last_div_date_str = last_ex_date.strftime('%d %B %Y')
+                last_cum_date = last_ex_date - pd.offsets.BDay(1)
+                last_cum_date_str = last_cum_date.strftime('%d %B %Y')
+                last_div_amount = hist_div.iloc[-1]
+
+            if not hist_div.empty or div_yield:
+                c1, c2 = st.columns(2)
+                c1.info(f"**Riwayat Dividen Terakhir**\n\nNominal: **Rp {last_div_amount:,.2f}** / lembar\n\nCum-Date: **{last_cum_date_str}**\n\nEx-Date: **{last_div_date_str}**")
+                
+                yield_str = f"{div_yield * 100:.2f}%" if div_yield else "N/A"
+                c2.success(f"**Proyeksi Jadwal Mendatang**\n\nEstimasi Yield: **{yield_str}**\n\nCum-Date: **{cum_div_date_str}**\n\nEx-Date: **{ex_div_date_str}**")
+            else:
+                st.info("⚪ Tidak ada data histori / pembagian dividen untuk emiten ini yang tercatat.")
+
             # --- SEKSI BERITA MULTI-SOURCE GOOGLE NEWS INDONESIA ---
             st.write("---")
             st.subheader("📰 BERITA & SENTIMEN PASAR LOKAL (ID)")
