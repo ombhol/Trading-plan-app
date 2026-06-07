@@ -5,7 +5,7 @@ from datetime import date, timedelta
 
 st.set_page_config(page_title="Analisis Emiten & S&R", page_icon="📊", layout="wide")
 
-st.title("📊 Analisis Saham, Tren & Support-Resistance (1 Minggu)")
+st.title("📊 Analisis Saham, Tren & Support-Resistance (1 Minggu)cek by danang")
 st.write("Masukkan kode emiten saham Indonesia untuk melihat analisis tren mingguan dan titik krusial harga.")
 
 # Input Emiten
