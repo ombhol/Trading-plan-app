@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
+import yfinance as yf
 import plotly.graph_objects as go
-from datetime import date
-import requests
+from datetime import date, timedelta
+import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
 
-st.set_page_config(page_title="Trading Plan Pro - 100% Data Resmi BEI", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Trading Plan Pro - Super Stable", page_icon="📈", layout="wide")
 
 # --- STYLE PREMIUM ANTI-BLUR ---
 st.markdown("""
@@ -23,110 +24,94 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🦅 DASHBOARD TRADING PLAN HARIAN & AGREGATOR BERITA")
-st.write(f"Analisis Pasar Terintegrasi 100% Data Resmi BEI (Situs IDX) & Google News — Update: {date.today().strftime('%d %B %Y')}")
+st.title("🦅 DASHBOARD TRADING PLAN HARIAN & INTELLIGENCE NEWS")
+st.write(f"Analisis Teknikal Terintegrasi Agregator Berita Indonesia — Update: {date.today().strftime('%d %B %Y')}")
 
-ticker_input = st.text_input("Masukkan Kode Saham (Contoh: BRMS, BBCA, TLKM)", "BBCA").upper()
+# Input Ticker Otomatis Dibersihkan dari Spasi
+ticker_clean = st.text_input("Masukkan Kode Saham (Contoh: BRMS, BBCA, TLKM)", "BBCA").strip().upper()
+ticker_code = f"{ticker_clean}.JK"
 
 st.markdown("---")
 
-# --- FUNGSI 1: AMBIL DATA HARGA & RINGKASAN SAHAM DARI BEI ---
-def ambil_data_saham_bei(ticker):
-    url = "https://www.idx.co.id/primary/TradingSummary/GetStockSummary"
-    params = {"culture": "id-id", "pageNumber": 1, "pageSize": 20, "keyword": ticker}
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    try:
-        res = requests.get(url, params=params, headers=headers, timeout=7)
-        res_data = res.json()
-        if res_data and "data" in res_data and len(res_data["data"]) > 0:
-            # Cari data yang kodenya benar-benar cocok (exact match)
-            for item in res_data["data"]:
-                if item.get("StockCode") == ticker:
-                    return {"sukses": True, "data": item}
-    except Exception as e:
-        pass
-    return {"sukses": False}
-
-# --- FUNGSI 2: AMBIL JADWAL DIVIDEN DARI BEI ---
-def ambil_dividen_bei(ticker):
-    url = "https://www.idx.co.id/primary/CorporateAction/GetCorporateActionTrading"
-    params = {"culture": "id-id", "pageNumber": 1, "pageSize": 50, "keyword": ticker}
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    try:
-        res = requests.get(url, params=params, headers=headers, timeout=7)
-        res_data = res.json()
-        if res_data and "data" in res_data and len(res_data["data"]) > 0:
-            df = pd.DataFrame(res_data["data"])
-            df_div = df[df['Jumlah'].str.contains('Dividen|Cash', case=False, na=False)]
-            if not df_div.empty:
-                terbaru = df_div.iloc[0]
-                
-                def format_tgl(s):
-                    if not s or s == '-': return '-'
-                    try: return pd.to_datetime(s[:10]).strftime('%d %B %Y')
-                    except: return s
-                
-                return {
-                    "ada": True,
-                    "nominal": terbaru.get('Jumlah', '-'),
-                    "cum_date": format_tgl(terbaru.get('CumDateReg')),
-                    "ex_date": format_tgl(terbaru.get('ExDateReg')),
-                    "Keterangan": terbaru.get('Keterangan', '-')
-                }
-    except:
-        pass
-    return {"ada": False}
-
-# --- FUNGSI 3: AMBIL BERITA INDONESIA ---
-def ambil_berita_indonesia(ticker):
+# --- FUNGSI AMBIL BERITA & SENTIMEN DIVIDEN (AMAN & KEBAL EROR) ---
+def ambil_sentimen_dan_berita(ticker):
     daftar_berita = []
+    info_dividen = {"ada": False}
     try:
         query = urllib.parse.quote(f"{ticker} saham")
         url = f"https://news.google.com/rss/search?q={query}&hl=id-ID&gl=ID&ceid=ID:id"
+        
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as response:
-            root = ET.fromstring(response.read())
+        with urllib.request.urlopen(req, timeout=5) as response:
+            xml_data = response.read()
+            
+        root = ET.fromstring(xml_data)
+        
         for item in root.findall('.//item')[:5]:
             title = item.find('title').text
-            if " - " in title: title = title.rsplit(" - ", 1)[0]
-            daftar_berita.append({"title": title, "link": item.find('link').text, "source": item.find('source').text, "date": item.find('pubDate').text[:16]})
-    except: pass
-    return daftar_berita
+            link = item.find('link').text
+            pub_date = item.find('pubDate').text
+            source = item.find('source').text if item.find('source') is not None else "Media Lokal"
+            
+            if " - " in title:
+                title = title.rsplit(" - ", 1)[0]
+                
+            daftar_berita.append({"title": title, "link": link, "source": source, "date": pub_date[:16]})
+            
+            if any(x in title.lower() for x in ["dividen", "cum", "ex", "rups", "bagi"]):
+                if not info_dividen["ada"]:
+                    info_dividen = {"ada": True, "judul": title, "link": link, "sumber": source}
+    except:
+        pass  # Jika internet/Google News bermasalah, aplikasi tidak akan crash
+    return daftar_berita, info_dividen
 
-# --- PROSES UTAMA ---
+# --- PROSES DOWNLOAD & VALIDASI DATA (ANTI-MULTIINDEX CRASH) ---
 try:
-    with st.spinner('Menghubungkan langsung ke API Bursa Efek Indonesia (IDX)...'):
-        hasil_saham = ambil_data_saham_bei(ticker_input)
-        data_dividen_bei = ambil_dividen_bei(ticker_input)
-        berita_lokal = ambil_berita_indonesia(ticker_input)
+    start_date = date.today() - timedelta(days=365)
+    end_date = date.today()
+    
+    with st.spinner(f'Mengunduh data saham {ticker_clean}...'):
+        # Download data dari Yahoo Finance
+        df_raw = yf.download(ticker_code, start=start_date, end=end_date, interval="1d")
+        berita_lokal, dividen_lokal = ambil_sentimen_dan_berita(ticker_clean)
         
-    if hasil_saham["sukses"]:
-        s_data = hasil_saham["data"]
-        
-        # Ekstrak metrik dari data BEI
-        harga_terakhir = float(s_data.get("Close", 0))
-        harga_tertinggi = float(s_data.get("High", 0))
-        harga_terendah = float(s_data.get("Low", 0))
-        harga_pembukaan = float(s_data.get("Open", 0))
-        harga_sebelumnya = float(s_data.get("Prev", 0))
-        volume_transaksi = float(s_data.get("Volume", 0))
-        perubahan = float(s_data.get("Change", 0))
-        
-        # Hitung persentase perubahan secara mandiri
-        persentase_ubah = (perubahan / harga_sebelumnya) * 100 if harga_sebelumnya > 0 else 0.0
+    if df_raw is not None and not df_raw.empty:
+        # PEMBERSIHAN KRUSIAL: Memaksa tabel agar tidak berbentuk MultiIndex
+        data_saham = df_raw.copy()
+        if isinstance(data_saham.columns, pd.MultiIndex):
+            data_saham.columns = data_saham.columns.get_level_values(0)
+            
+        # Memastikan data dikonversi menjadi array 1 dimensi (Bukan DataFrame Kolom Ganda)
+        open_arr = data_saham['Open'].to_numpy().flatten()
+        high_arr = data_saham['High'].to_numpy().flatten()
+        low_arr = data_saham['Low'].to_numpy().flatten()
+        close_arr = data_saham['Close'].to_numpy().flatten()
+        volume_arr = data_saham['Volume'].to_numpy().flatten()
 
-        # Strategi S&R Klasik menggunakan data harian berjalan dari BEI
-        pivot = (harga_tertinggi + harga_terendah + harga_terakhir) / 3
-        r1 = (2 * pivot) - harga_terendah
-        r2 = pivot + (harga_tertinggi - harga_terendah)
-        s1 = (2 * pivot) - harga_tertinggi
-        s2 = pivot - (harga_tertinggi - harga_terendah)
+        # Ambil nilai terakhir
+        harga_terakhir = float(close_arr[-1])
+        harga_sebelumnya = float(close_arr[-2])
+        perubahan = harga_terakhir - harga_sebelumnya
+        persentase_ubah = (perubahan / harga_sebelumnya) * 100
+        
+        # Hitung Rata-rata Volume 20 Hari
+        vol_series = pd.Series(volume_arr)
+        vol_avg = float(vol_series.rolling(window=20).mean().iloc[-1])
 
-        # Layout Tampilan 3 Kolom Utama Atas
+        # Hitung Pivot Support & Resistance (Data 5 Hari Terakhir)
+        high_5h = float(max(high_arr[-5:]))
+        low_5h = float(min(low_arr[-5:]))
+        pivot = (high_5h + low_5h + harga_terakhir) / 3
+        r1 = (2 * pivot) - low_5h
+        r2 = pivot + (high_5h - low_5h)
+        s1 = (2 * pivot) - high_5h
+        s2 = pivot - (high_5h - low_5h)
+
+        # Layout Tampilan Atas (3 Kolom Metrik)
         col_m1, col_m2, col_m3 = st.columns(3)
-        col_m1.metric("EMITEN SAHAM (IDX)", f"{ticker_input}", "SUMBER: ASLI BEI")
-        col_m2.metric("HARGA TERAKHIR", f"Rp {harga_terakhir:,.0f}", f"{perubahan:+,.0f} ({persentase_ubah:+.2f}%)")
-        col_m3.metric("VOLUME HARIAN", f"{volume_transaksi/1e6:.2f} M lembar", f"Nilai: Rp {float(s_data.get('Value', 0))/1e9:.2f} Miliar", delta_color="off")
+        col_m1.metric("EMITEN SAHAM", f"{ticker_clean}", "Status: Terhubung Aktif")
+        col_m2.metric("HARGA CLOSE TERAKHIR", f"Rp {harga_terakhir:,.0f}", f"{perubahan:+,.0f} ({persentase_ubah:+.2f}%)")
+        col_m3.metric("VOLUME TRANSAKSI", f"{volume_arr[-1]/1e6:.1f} M", f"Rata-rata 20H: {vol_avg/1e6:.1f} M", delta_color="off")
 
         st.markdown("---")
         col_left, col_right = st.columns([1, 1.2])
@@ -138,52 +123,48 @@ try:
             st.success(f"🎯 **TARGET UNTUNG:** TP1: Rp {int(r1):,.0f} | TP2: Rp {int(r2):,.0f}")
             
             st.write("---")
-            st.subheader("📊 RINGKASAN TRANSAKSI BEI HARI INI")
-            st.write(f"• **Harga Pembukaan:** Rp {harga_pembukaan:,.0f}")
-            st.write(f"• **Rentang Harian:** Rp {harga_terendah:,.0f} - Rp {harga_tertinggi:,.0f}")
-            st.write(f"• **Frekuensi Transaksi:** {float(s_data.get('Frequency', 0)):,.0f} kali")
+            st.subheader("📊 STATISTIK HARIAN KUNCI")
+            st.write(f"• Harga Pembukaan Hari Ini: **Rp {float(open_arr[-1]):,.0f}**")
+            st.write(f"• Harga Tertinggi Hari Ini: **Rp {float(high_arr[-1]):,.0f}**")
+            st.write(f"• Harga Terendah Hari Ini: **Rp {float(low_arr[-1]):,.0f}**")
 
         with col_right:
-            st.subheader("📊 GRAFIK INTRA-DAY/HARIAN BERJALAN")
-            # Membuat visualisasi bar rentang harga hari ini berdasarkan data resmi bursa
+            st.subheader("📊 ANALISIS GRAFIK CANDLESTICK HARIAN")
+            # Menampilkan 40 candle terakhir agar chart rapi dan tidak blur
+            idx_data = data_saham.index[-40:]
             fig = go.Figure(data=[go.Candlestick(
-                x=[date.today().strftime('%Y-%m-%d')],
-                open=[harga_pembukaan],
-                high=[harga_tertinggi],
-                low=[harga_terendah],
-                close=[harga_terakhir],
-                name='Rentang Hari Ini'
+                x=idx_data, open=open_arr[-40:], high=high_arr[-40:],
+                low=low_arr[-40:], close=close_arr[-40:], name='Candle'
             )])
-            fig.update_layout(template="plotly_dark", margin=dict(l=10, r=10, t=10, b=10), height=300)
+            fig.update_layout(template="plotly_dark", margin=dict(l=10, r=10, t=10, b=10), height=350)
             st.plotly_chart(fig, use_container_width=True)
             
-            # --- SEKSI DATA RESMI BURSA EFEK INDONESIA (BEI) ---
+            # --- SEKSI INFO DIVIDEN DOMESTIK ---
             st.write("---")
-            st.subheader("💰 INFO AKSI KORPORASI / DIVIDEN (SUMBER: BEI)")
-            if data_dividen_bei["ada"]:
+            st.subheader("💰 DETEKTOR SENTIMEN DIVIDEN TERBARU (2026)")
+            if dividen_lokal["ada"]:
                 st.markdown(f"""
                 <div style="background-color: #1f2937; padding: 15px; border-radius: 8px; border-left: 5px solid #10B981;">
-                    <h4 style="margin:0; color:#10B981;">📢 Pengumuman Dividen Terakhir / Terjadwal</h4>
-                    <p style="margin:5px 0 0 0; color:white;"><b>Keterangan:</b> {data_dividen_bei['nominal']}</p>
-                    <table style="width:100%; margin-top:10px; color:white;">
-                        <tr><td><b>📅 CUM DATE (Pasar Reguler):</b></td><td style="color:#FBBF24;"><b>{data_dividen_bei['cum_date']}</b></td></tr>
-                        <tr><td><b>📅 EX DATE (Pasar Reguler):</b></td><td style="color:#EF4444;"><b>{data_dividen_bei['ex_date']}</b></td></tr>
-                    </table>
+                    <h5 style="margin:0; color:#10B981;">📢 Berita / Agenda RUPS & Dividen Terdeteksi</h5>
+                    <p style="margin:8px 0; color:white; font-size:14px;">🔗 <a href="{dividen_lokal['link']}" target="_blank" style="color:#FBBF24; text-decoration:none; font-weight:bold;">{dividen_lokal['judul']}</a></p>
+                    <caption style="color:#9ca3af; font-size:12px;">Sumber: {dividen_lokal['sumber']}</caption>
                 </div>
                 """, unsafe_allow_html=True)
             else:
-                st.info("⚪ Tidak ada pengumuman agenda dividen tunai terbaru yang tercatat di papan keterbukaan informasi IDX saat ini.")
+                st.info("⚪ Belum mendeteksi berita atau pengumuman jadwal dividen krusial di media nasional baru-baru ini.")
 
-            # --- SEKSI BERITA ---
+            # --- SEKSI BERITA MULTI-SOURCE ---
             st.write("---")
-            st.subheader("📰 BERITA & SENTIMEN PASAR LOKAL")
+            st.subheader("📰 AGREGATOR BERITA & SENTIMEN LOKAL (ID)")
             if berita_lokal:
                 for item in berita_lokal:
                     st.markdown(f"🔗 **[{item['title']}]({item['link']})**")
                     st.caption(f"📰 {item['source']} | 🕒 {item['date']}")
+                    st.markdown("<div style='margin-bottom: 8px;'></div>", unsafe_allow_html=True)
             else:
-                st.info("⚪ Tidak ada berita terbaru.")
+                st.info(f"⚪ Tidak ditemukan berita spesifik Bahasa Indonesia untuk kata kunci '{ticker_clean}' saat ini.")
     else:
-        st.error(f"Kode Saham '{ticker_input}' tidak ditemukan atau tidak aktif di sistem Bursa Efek Indonesia.")
+        st.error(f"Gagal menarik data! Pastikan kode '{ticker_clean}' terdaftar di Bursa Efek Indonesia.")
+
 except Exception as e:
-    st.error(f"Sistem Error: {str(e)}")
+    st.error(f"Aplikasi mengalami gangguan teknis: {str(e)}")
