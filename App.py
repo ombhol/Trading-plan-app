@@ -3,59 +3,69 @@ import pandas as pd
 import yfinance as yf
 import plotly.graph_objects as go
 from datetime import date, timedelta
+import urllib.request
+import urllib.parse
+import xml.etree.ElementTree as ET
 
-st.set_page_config(page_title="Trading Plan Harian + ARA/ARB + News", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Trading Plan Pro + Multi-Source News", page_icon="📈", layout="wide")
 
-# --- PERBAIKAN TOTAL SCRIPT CSS (Warna Teks Kotak Metrik Dipaksa Putih Bersih) ---
+# --- STYLE PREMIUM ANTI-BLUR (Warna Teks Putih Terang) ---
 st.markdown("""
     <style>
-    /* Background utama halaman */
     .main { background-color: #0e1117; }
-    
-    /* Box Metrik */
     div[data-testid="stMetric"] {
         background-color: #1f2937 !important;
         padding: 15px !important;
         border-radius: 10px !important;
         border: 1px solid #374151 !important;
     }
-    
-    /* Warna teks Judul Metrik (Atas) */
-    div[data-testid="stMetricLabel"] > div {
-        color: #9ca3af !important;
-        font-weight: bold !important;
-    }
-    
-    /* Warna teks Angka Utama/Harga Metrik (Tengah) */
-    div[data-testid="stMetricValue"] > div {
-        color: #ffffff !important;
-        font-weight: bold !important;
-    }
+    div[data-testid="stMetricLabel"] > div { color: #9ca3af !important; font-weight: bold !important; }
+    div[data-testid="stMetricValue"] > div { color: #ffffff !important; font-weight: bold !important; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🦅 DASHBOARD TRADING PLAN HARIAN & DETEKTOR EKSTREM")
-st.write(f"Analisis Pola Candlestick, Peringatan ARB & Berita Fundamental — Update: {date.today().strftime('%d %B %Y')}")
+st.title("🦅 DASHBOARD TRADING PLAN HARIAN & AGREGATOR BERITA INDONESIA")
+st.write(f"Analisis Teknikal + Integrasi Google News (CNBC, Kontan, Bisnis.com) — Update: {date.today().strftime('%d %B %Y')}")
 
 ticker_input = st.text_input("Masukkan Kode Saham (Contoh: BRMS, BBCA, TLKM)", "BRMS").upper()
 ticker_code = f"{ticker_input}.JK"
 
 st.markdown("---")
 
+# --- FUNGSI AMBIL BERITA DARI GOOGLE NEWS INDONESIA (NATIVE PYTHON) ---
+def ambil_berita_indonesia(ticker):
+    daftar_berita = []
+    try:
+        query = urllib.parse.quote(f"{ticker} saham")
+        url = f"https://news.google.com/rss/search?q={query}&hl=id-ID&gl=ID&ceid=ID:id"
+        
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req) as response:
+            xml_data = response.read()
+            
+        root = ET.fromstring(xml_data)
+        for item in root.findall('.//item')[:5]: # Ambil 5 berita teratas
+            title = item.find('title').text
+            link = item.find('link').text
+            pub_date = item.find('pubDate').text
+            source = item.find('source').text if item.find('source') is not None else "Sumber Lokal"
+            
+            # Rapikan judul berita dari embel-embel nama media di akhir judul
+            if " - " in title:
+                title = title.rsplit(" - ", 1)[0]
+                
+            daftar_berita.append({"title": title, "link": link, "source": source, "date": pub_date[:16]})
+    except Exception as e:
+        pass
+    return daftar_berita
+
 try:
     start_date = date.today() - timedelta(days=365)
     end_date = date.today()
     
-    with st.spinner('Memindai data pasar dan berita terbaru...'):
-        # Ambil data pergerakan harga
+    with st.spinner('Memindai data pasar dan agregator berita lokal...'):
         data_saham = yf.download(ticker_code, start=start_date, end=end_date, interval="1d")
-        
-        # Ambil data berita fundamental emiten secara real-time
-        try:
-            ticker_obj = yf.Ticker(ticker_code)
-            berita_saham = ticker_obj.news
-        except:
-            berita_saham = []
+        berita_lokal = ambil_berita_indonesia(ticker_input)
         
     if not data_saham.empty:
         if isinstance(data_saham.columns, pd.MultiIndex):
@@ -109,7 +119,7 @@ try:
             bull_1 = close_arr[-1] > open_arr[-1]
             body_3 = abs(close_arr[-3] - open_arr[-3])
             bear_3 = close_arr[-3] < open_arr[-3]
-            bull_2 = close_2 = close_arr[-2] > open_arr[-2]
+            bull_2 = close_arr[-2] > open_arr[-2]
             bull_3 = close_arr[-3] > open_arr[-3]
 
             if lshadow_1 >= 2 * body_1 and ushadow_1 <= 0.2 * body_1 and body_1 > 0:
@@ -188,21 +198,16 @@ try:
             fig.update_layout(template="plotly_dark", margin=dict(l=10, r=10, t=10, b=10), height=380)
             st.plotly_chart(fig, use_container_width=True)
             
-            # --- FITUR BARU: SEKSI BERITA FUNDAMENTAL DI BAWAH CHART ---
+            # --- SEKSI BERITA MULTI-SOURCE GOOGLE NEWS INDONESIA ---
             st.write("---")
-            st.subheader("📰 BERITA & SENTIMEN FUNDAMENTAL TERBARU")
-            if berita_saham:
-                # Menampilkan maksimal 4 berita terbaru agar rapi
-                for item in berita_saham[:4]:
-                    title = item.get('title', 'Tidak ada judul')
-                    publisher = item.get('publisher', 'Sumber Berita')
-                    link = item.get('link', '#')
-                    
-                    st.markdown(f"🔗 **[{title}]({link})**")
-                    st.caption(f"📢 Penerbit: {publisher}")
-                    st.markdown("<div style='margin-bottom: 8px;'></div>", unsafe_allow_html=True)
+            st.subheader("📰 BERITA & SENTIMEN PASAR LOKAL (ID)")
+            if berita_lokal:
+                for item in berita_lokal:
+                    st.markdown(f"🔗 **[{item['title']}]({item['link']})**")
+                    st.caption(f"📰 {item['source']} | 🕒 {item['date']}")
+                    st.markdown("<div style='margin-bottom: 6px;'></div>", unsafe_allow_html=True)
             else:
-                st.info("⚪ Tidak ada berita fundamental terbaru yang dirilis untuk emiten ini di jaringan pasar modal Yahoo Finance.")
+                st.info(f"⚪ Tidak ditemukan berita spesifik dalam Bahasa Indonesia untuk kata kunci '{ticker_input} saham' hari ini.")
 
     else:
         st.error("Data saham tidak ditemukan.")
