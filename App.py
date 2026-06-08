@@ -5,191 +5,196 @@ import plotly.graph_objects as go
 import numpy as np
 from datetime import date
 
-# Konfigurasi Layout
-st.set_page_config(page_title="Trading Plan Pro V5.1", layout="wide", page_icon="🦅")
+# --- KONFIGURASI HALAMAN ---
+st.set_page_config(page_title="Trading Plan Pro V7", layout="wide", page_icon="🦅")
 
-# --- FUNGSI DIVIDEN AKURAT ---
+# --- 1. FUNGSI INDIKATOR (CORE ENGINE) ---
+def calculate_indicators(df):
+    """Kalkulasi EMA, VWAP, RSI, dan ATR"""
+    df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
+    
+    # VWAP (Intraday)
+    df['Date'] = df.index.date
+    df['TP'] = (df['High'] + df['Low'] + df['Close']) / 3
+    df['TP_Vol'] = df['TP'] * df['Volume']
+    df['Cum_Vol'] = df.groupby('Date')['Volume'].cumsum()
+    df['Cum_TP_Vol'] = df.groupby('Date')['TP_Vol'].cumsum()
+    df['VWAP'] = df['Cum_TP_Vol'] / df['Cum_Vol']
+    
+    # RSI
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).ewm(span=14).mean()
+    loss = (-delta.where(delta < 0, 0)).ewm(span=14).mean()
+    df['RSI'] = 100 - (100 / (1 + (gain / loss)))
+    
+    # ATR & Volume MA
+    hl, hc, lc = df['High']-df['Low'], np.abs(df['High']-df['Close'].shift()), np.abs(df['Low']-df['Close'].shift())
+    df['ATR'] = pd.concat([hl, hc, lc], axis=1).max(axis=1).rolling(14).mean()
+    df['Vol_MA20'] = df['Volume'].rolling(20).mean()
+    
+    return df
+
+# --- 2. FUNGSI AUTO-SCANNER (REKOMENDASI) ---
+@st.cache_data(ttl=300)
+def scan_top_saham(watchlist):
+    hasil_scan = []
+    for ticker in watchlist:
+        try:
+            df = yf.download(f"{ticker}.JK", period="5d", interval="5m", progress=False)
+            if df.empty: continue
+            if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+            
+            df = calculate_indicators(df)
+            curr = df.iloc[-1]
+            
+            # Sistem Skoring Kelas Institusi
+            skor = 0
+            if curr['Close'] > curr['VWAP']: skor += 30      # Di atas harga rata-rata institusi
+            if curr['Close'] > curr['EMA20']: skor += 20     # Uptrend jangka pendek
+            if 40 < curr['RSI'] < 65: skor += 20             # Momentum sehat (belum pucuk)
+            elif curr['RSI'] >= 70: skor -= 20               # Hindari pucuk (Overbought)
+            if curr['Volume'] > curr['Vol_MA20']: skor += 20 # Ada lonjakan volume
+            
+            if skor >= 60:
+                hasil_scan.append({
+                    "ticker": ticker,
+                    "skor": skor,
+                    "harga": curr['Close'],
+                    "vwap": curr['VWAP']
+                })
+        except: continue
+        
+    return sorted(hasil_scan, key=lambda x: x['skor'], reverse=True)[:3]
+
+# --- 3. FUNGSI DATA DIVIDEN ---
 @st.cache_data(ttl=3600)
-def ambil_dividen_akurat(ticker_code):
-    try:
-        ticker_obj = yf.Ticker(ticker_code)
-        hist_div = ticker_obj.dividends
-        
-        if hist_div.empty:
-            return {"ada": False}
-            
-        # HAPUS Timezone agar komparasi tanggal tidak meleset dengan jam lokal
-        hist_div.index = pd.to_datetime(hist_div.index).tz_localize(None)
-        today = pd.Timestamp(date.today())
-        
-        info_dividen = {"ada": True, "status_upcoming": False, "terakhir": None, "upcoming": None}
-        
-        def format_dividen(ex_date, nominal):
-            # Cum date 1 Hari Kerja sebelum Ex-Date
-            cum_date = ex_date - pd.offsets.BDay(1)
-            # Recording date 1 Hari Kerja setelah Ex-Date
-            recording_date = ex_date + pd.offsets.BDay(1)
-            
-            return {
-                "nominal": f"Rp {nominal:,.2f}",
-                "cum_date": cum_date.strftime('%d %b %Y'),
-                "ex_date": ex_date.strftime('%d %b %Y'),
-                "rec_date": recording_date.strftime('%d %b %Y'),
-                "tanggal_asli": ex_date
-            }
+def scan_kalender_dividen(watchlist):
+    upcoming_list = []
+    today = pd.Timestamp(date.today())
+    for ticker in watchlist:
+        try:
+            hist_div = yf.Ticker(f"{ticker}.JK").dividends
+            if not hist_div.empty:
+                hist_div.index = pd.to_datetime(hist_div.index).tz_localize(None)
+                future_divs = hist_div[hist_div.index >= today]
+                for ex_date, nominal in future_divs.items():
+                    cum_date = ex_date - pd.offsets.BDay(1)
+                    upcoming_list.append({
+                        "Emiten": ticker, "Cum Date": cum_date.strftime('%d %b %Y'),
+                        "Ex Date": ex_date.strftime('%d %b %Y'), "Nominal": f"Rp {nominal:,.0f}"
+                    })
+        except: continue
+    if upcoming_list:
+        df = pd.DataFrame(upcoming_list)
+        df['SortDate'] = pd.to_datetime(df['Ex Date'])
+        return df.sort_values(by='SortDate').drop(columns=['SortDate'])
+    return pd.DataFrame()
 
-        last_ex_date = hist_div.index[-1]
-        last_nominal = float(hist_div.iloc[-1])
-        data_paling_akhir = format_dividen(last_ex_date, last_nominal)
-        
-        # Logika Upcoming vs History
-        if data_paling_akhir["tanggal_asli"] >= today:
-            info_dividen["status_upcoming"] = True
-            info_dividen["upcoming"] = data_paling_akhir
-            if len(hist_div) > 1:
-                prev_ex_date = hist_div.index[-2]
-                prev_nominal = float(hist_div.iloc[-2])
-                info_dividen["terakhir"] = format_dividen(prev_ex_date, prev_nominal)
-        else:
-            info_dividen["terakhir"] = data_paling_akhir
-            
-        return info_dividen
-    except Exception as e:
-        return {"ada": False, "error": str(e)}
-
-# --- FUNGSI PENGAMBILAN DATA (MULTI-TIMEFRAME) ---
 @st.cache_data(ttl=300)
 def get_market_data(ticker):
     try:
         df_5m = yf.download(f"{ticker}.JK", period="5d", interval="5m", progress=False)
         df_1d = yf.download(f"{ticker}.JK", period="3mo", interval="1d", progress=False)
-        
-        if not df_5m.empty and isinstance(df_5m.columns, pd.MultiIndex):
-            df_5m.columns = df_5m.columns.get_level_values(0)
-        if not df_1d.empty and isinstance(df_1d.columns, pd.MultiIndex):
-            df_1d.columns = df_1d.columns.get_level_values(0)
-            
+        if not df_5m.empty and isinstance(df_5m.columns, pd.MultiIndex): df_5m.columns = df_5m.columns.get_level_values(0)
+        if not df_1d.empty and isinstance(df_1d.columns, pd.MultiIndex): df_1d.columns = df_1d.columns.get_level_values(0)
         return df_5m, df_1d
-    except Exception:
-        return pd.DataFrame(), pd.DataFrame()
+    except: return pd.DataFrame(), pd.DataFrame()
 
-def calculate_advanced_indicators(df):
-    df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
-    
-    # VWAP
-    df['Date'] = df.index.date
-    df['Typical_Price'] = (df['High'] + df['Low'] + df['Close']) / 3
-    df['TP_Volume'] = df['Typical_Price'] * df['Volume']
-    df['Cum_Volume'] = df.groupby('Date')['Volume'].cumsum()
-    df['Cum_TP_Volume'] = df.groupby('Date')['TP_Volume'].cumsum()
-    df['VWAP'] = df['Cum_TP_Volume'] / df['Cum_Volume']
-    
-    # ATR
-    high_low = df['High'] - df['Low']
-    high_close = np.abs(df['High'] - df['Close'].shift())
-    low_close = np.abs(df['Low'] - df['Close'].shift())
-    df['ATR'] = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1).rolling(14).mean()
-    
-    return df
-
-# --- UI SIDEBAR ---
+# --- 4. UI SIDEBAR PENGATURAN ---
 with st.sidebar:
     st.markdown("### ⚙️ Parameter Trading")
-    ticker = st.text_input("Kode Saham (Contoh: BBCA):", "BBCA").upper()
+    ticker_utama = st.text_input("Analisis Saham Spesifik:", "BRMS").upper()
     modal_trading = st.number_input("Total Modal (Rp):", value=10000000, step=1000000)
     risiko_persen = st.slider("Risiko per Trade (%):", 0.1, 5.0, 1.0) / 100
+    
     st.markdown("---")
-    st.caption("🟢 Harga > VWAP = Bullish")
-    st.caption("🔴 Harga < VWAP = Bearish")
+    st.markdown("### 📋 Daftar Pantauan (Scanner)")
+    daftar_pantauan = st.multiselect(
+        "Pilih Saham untuk Discan:",
+        ["BBCA", "BBRI", "BMRI", "BBNI", "ASII", "TLKM", "PTBA", "ADRO", "ITMG", "UNTR", "BRPT", "AMMN", "BRMS", "PANI", "GOTO"],
+        default=["PTBA", "ADRO", "BRMS", "PANI", "AMMN", "BBCA", "BMRI", "ASII"]
+    )
 
-# --- MAIN LOGIC ---
-st.title(f"🦅 {ticker} - Professional Trading Dashboard")
+# --- 5. UI MAIN: TOP REKOMENDASI (DIKEMBALIKAN) ---
+st.title("🦅 TRADING PLAN PRO V7")
 
-df_5m, df_1d = get_market_data(ticker)
-dividen_data = ambil_dividen_akurat(f"{ticker}.JK")
+st.subheader("🏆 Top 3 Rekomendasi Setup Hari Ini (5-Min)")
+st.caption("Memindai saham di Watchlist yang diakumulasi di atas VWAP (Update tiap 5 menit)")
+
+with st.spinner("Memindai setup probabilitas tinggi..."):
+    top_3 = scan_top_saham(daftar_pantauan)
+
+if top_3:
+    cols_top = st.columns(3)
+    for i, data in enumerate(top_3):
+        warna_skor = "#10B981" if data['skor'] >= 70 else "#FBBF24"
+        with cols_top[i]:
+            st.markdown(f"""
+            <div style="background-color: #1f2937; padding: 20px; border-radius: 12px; border-top: 5px solid {warna_skor}; text-align: center;">
+                <h2 style="margin: 0; color: white;">{data['ticker']}</h2>
+                <h1 style="margin: 5px 0; color: {warna_skor};">{data['skor']} / 90</h1>
+                <p style="margin: 0; color: #9CA3AF; font-size: 14px;">Skor VWAP & Momentum</p>
+                <hr style="border-color: #374151; margin: 10px 0;">
+                <p style="margin: 0; color: white; font-weight: bold;">Harga: Rp {data['harga']:,.0f}</p>
+                <p style="margin: 0; color: #60A5FA; font-size: 13px;">Garis VWAP: Rp {data['vwap']:,.0f}</p>
+            </div>
+            """, unsafe_allow_html=True)
+else:
+    st.info("Market sedang tidak bersahabat atau konsolidasi. Belum ada setup ideal (Skor > 60) dari Watchlist Anda.")
+
+st.markdown("---")
+
+# --- 6. UI MAIN: DEEP DIVE ANALISIS ---
+st.subheader(f"🔎 Deep Dive Analisis: {ticker_utama}")
+
+df_5m, df_1d = get_market_data(ticker_utama)
 
 if not df_5m.empty and not df_1d.empty:
-    df_5m = calculate_advanced_indicators(df_5m)
+    df_5m = calculate_indicators(df_5m)
     curr_5m = df_5m.iloc[-1]
     
     ma20_daily = df_1d['Close'].rolling(20).mean().iloc[-1]
     tren_harian = "UPTREND 🟢" if df_1d['Close'].iloc[-1] > ma20_daily else "DOWNTREND 🔴"
     
-    entry = curr_5m['Close']
-    sl = entry - (curr_5m['ATR'] * 1.5)
-    tp = entry + (curr_5m['ATR'] * 3.0)
+    entry, atr = curr_5m['Close'], curr_5m['ATR']
+    sl, tp = entry - (atr * 1.5), entry + (atr * 3.0)
+    
     jarak_sl = entry - sl
+    total_lot = int(((modal_trading * risiko_persen) / jarak_sl) / 100) if jarak_sl > 0 else 0
     
-    jumlah_rupiah_risiko = modal_trading * risiko_persen
-    total_lot = int((jumlah_rupiah_risiko / jarak_sl) / 100) if jarak_sl > 0 else 0
-    
-    # --- METRIK UTAMA ---
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Tren Harian (Daily)", tren_harian)
-    c2.metric("Posisi Thd VWAP", f"Rp {curr_5m['VWAP']:,.0f}", "Diatas Rata-rata Institusi" if entry > curr_5m['VWAP'] else "Dibawah Rata-rata", delta_color="normal" if entry > curr_5m['VWAP'] else "inverse")
-    c3.metric("Rekomendasi Entry", f"Rp {entry:,.0f}")
-    c4.metric("Maksimal Lot", f"{total_lot} Lot")
+    c1.metric("Tren (Daily)", tren_harian)
+    c2.metric("Posisi Thd VWAP", f"Rp {curr_5m['VWAP']:,.0f}", "BULLISH" if entry > curr_5m['VWAP'] else "BEARISH", delta_color="normal" if entry > curr_5m['VWAP'] else "inverse")
+    c3.metric("Harga Saat Ini", f"Rp {entry:,.0f}")
+    c4.metric("Rekomendasi Max Lot", f"{total_lot} Lot")
     
-    st.markdown("---")
-    
-    # --- TABS LAYOUT ---
-    tab1, tab2, tab3 = st.tabs(["📊 Chart & Indikator", "📋 Action Plan Detail", "💰 Info Dividen & Korporasi"])
+    tab1, tab2, tab3 = st.tabs(["📊 Chart Intraday", "📋 Setup Eksekusi", "💰 Kalender Dividen Watchlist"])
     
     with tab1:
         fig = go.Figure()
-        fig.add_trace(go.Candlestick(x=df_5m.index, open=df_5m['Open'], high=df_5m['High'], low=df_5m['Low'], close=df_5m['Close'], name="Harga 5M"))
-        fig.add_trace(go.Scatter(x=df_5m.index, y=df_5m['VWAP'], line=dict(color='#3b82f6', width=2), name='VWAP (Bandar Line)'))
+        fig.add_trace(go.Candlestick(x=df_5m.index, open=df_5m['Open'], high=df_5m['High'], low=df_5m['Low'], close=df_5m['Close'], name="Harga"))
+        fig.add_trace(go.Scatter(x=df_5m.index, y=df_5m['VWAP'], line=dict(color='#3b82f6', width=2), name='VWAP'))
         fig.add_trace(go.Scatter(x=df_5m.index, y=df_5m['EMA20'], line=dict(color='#fbbf24', width=1.5, dash='dot'), name='EMA 20'))
-        
-        fig.update_layout(template="plotly_dark", height=500, margin=dict(l=0, r=0, t=10, b=0), xaxis_rangeslider_visible=False, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+        fig.update_layout(template="plotly_dark", height=450, xaxis_rangeslider_visible=False, margin=dict(t=10, b=10))
         st.plotly_chart(fig, use_container_width=True)
 
     with tab2:
         col_plan, col_rules = st.columns([1.5, 1])
         with col_plan:
-            st.subheader("🎯 Eksekusi Trading")
-            st.success(f"**TAKE PROFIT (TP):** Rp {tp:,.0f} \n\n*Jual parsial jika harga mulai melambat di dekat area ini.*")
-            st.error(f"**STOP LOSS (SL):** Rp {sl:,.0f} \n\n*Cut loss tanpa ragu jika candle 5M ditutup di bawah level ini.*")
-            st.warning(f"**RISK EXPOSURE:** Rp {jumlah_rupiah_risiko:,.0f} \n\n*Ini adalah nominal maksimal yang akan Anda hilangkan jika terkena SL.*")
-            
+            st.success(f"🎯 **TAKE PROFIT:** Rp {tp:,.0f}")
+            st.error(f"🛑 **STOP LOSS:** Rp {sl:,.0f} (Potensi Rugi: Rp {modal_trading * risiko_persen:,.0f})")
         with col_rules:
-            st.subheader("⚖️ Kondisi Market Saat Ini")
-            if tren_harian == "DOWNTREND 🔴":
-                st.error("⚠️ **Peringatan Keras:** Tren harian turun. Risiko nyangkut tinggi.")
-            elif entry < curr_5m['VWAP']:
-                st.warning("⏳ **Wait & See:** Harga di bawah VWAP. Institusi belum akumulasi penuh.")
-            elif entry > curr_5m['VWAP'] and entry > curr_5m['EMA20']:
-                st.success("🔥 **Clear to Launch:** Setup probabilitas tinggi. Momentum mendukung.")
-            else:
-                st.info("🔄 **Fase Konsolidasi:** Market sideway/belum jelas.")
+            if tren_harian == "DOWNTREND 🔴": st.error("⚠️ Hindari transaksi (Tren turun kuat).")
+            elif entry < curr_5m['VWAP']: st.warning("⏳ Wait & See (Harga di bawah rata-rata institusi).")
+            else: st.success("🔥 Setup Ideal (Harga > VWAP & Uptrend).")
 
     with tab3:
-        st.subheader("Jadwal Pembagian Dividen")
-        col_div1, col_div2 = st.columns(2)
-        
-        with col_div1:
-            if dividen_data["ada"]:
-                if dividen_data["status_upcoming"]:
-                    upc = dividen_data["upcoming"]
-                    st.success("📢 **DIVIDEN AKAN DATANG!**")
-                    st.markdown(f"**Nominal:** `{upc['nominal']} / lembar`")
-                    st.markdown(f"🛒 **Cum Date:** `{upc['cum_date']}`")
-                    st.markdown(f"🛑 **Ex Date:** `{upc['ex_date']}`")
-                    st.markdown(f"📝 **Rec Date:** `{upc['rec_date']}`")
-                else:
-                    st.info("Belum ada pengumuman dividen baru dalam waktu dekat.")
+        st.subheader("📅 Jadwal Dividen Mendatang (Dari Watchlist)")
+        with st.spinner("Menarik data jadwal aksi korporasi..."):
+            df_kalender = scan_kalender_dividen(daftar_pantauan)
+            if not df_kalender.empty:
+                st.dataframe(df_kalender.style.set_properties(**{'background-color': '#1f2937', 'color': '#10B981'}), use_container_width=True, hide_index=True)
             else:
-                st.warning("Tidak ada data pembagian dividen untuk emiten ini.")
-                
-        with col_div2:
-            if dividen_data["ada"] and dividen_data["terakhir"]:
-                ter = dividen_data["terakhir"]
-                st.markdown("🕰️ **RIWAYAT TERAKHIR DIBAGIKAN:**")
-                st.markdown(f"**Nominal:** `{ter['nominal']} / lembar`")
-                st.markdown(f"- Cum Date: {ter['cum_date']}")
-                st.markdown(f"- Ex Date: {ter['ex_date']}")
-            
-        st.caption("ℹ️ *Data korporasi ditarik dari database global. Untuk keperluan Cum-Date pasar reguler, selalu lakukan verifikasi silang (cross-check) dengan pengumuman resmi KSEI.*")
-
+                st.info("Tidak ada jadwal dividen terdekat untuk saham di dalam Watchlist Anda.")
 else:
-    st.error("Gagal menarik data. Pastikan format kode saham benar (contoh: BBCA) dan koneksi internet Anda stabil.")
+    st.error("Gagal menarik data detail. Pastikan format ticker benar.")
