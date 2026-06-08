@@ -9,7 +9,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 
 # --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="Trading Plan Pro V7.2", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Trading Plan Pro V7.3", layout="wide", page_icon="🦅")
 
 # --- 1. FUNGSI INDIKATOR (CORE ENGINE) ---
 def calculate_indicators(df):
@@ -163,7 +163,7 @@ with st.sidebar:
     daftar_pantauan = [s.strip().upper() for s in saham_input_user.split(",") if s.strip()]
 
 # --- 5. UI MAIN: TOP REKOMENDASI ---
-st.title("🦅 TRADING PLAN PRO V7.2")
+st.title("🦅 TRADING PLAN PRO V7.3")
 
 st.subheader("🏆 Top 3 Rekomendasi Setup Hari Ini (5-Min)")
 st.caption("Memindai saham di Watchlist yang diakumulasi di atas VWAP (Update tiap 5 menit)")
@@ -210,11 +210,26 @@ if not df_5m.empty and not df_1d.empty:
     jarak_sl = entry - sl
     total_lot = int(((modal_trading * risiko_persen) / jarak_sl) / 100) if jarak_sl > 0 else 0
     
+    # Kalkulasi Skor Saham Spesifik (Deep Dive)
+    skor_utama = 0
+    if entry > curr_5m['VWAP']: skor_utama += 30
+    if entry > curr_5m['EMA20']: skor_utama += 20
+    if 40 < curr_5m['RSI'] < 65: skor_utama += 20
+    elif curr_5m['RSI'] >= 70: skor_utama -= 20
+    if curr_5m['Volume'] > curr_5m['Vol_MA20']: skor_utama += 20
+    
+    skor_utama_final = max(0, min(100, skor_utama)) # Memastikan skor tidak minus atau lebih dari 100
+    warna_skor_utama = "normal" if skor_utama_final >= 60 else "inverse"
+    
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Tren (Daily)", tren_harian)
     c2.metric("Posisi Thd VWAP", f"Rp {curr_5m['VWAP']:,.0f}", "BULLISH" if entry > curr_5m['VWAP'] else "BEARISH", delta_color="normal" if entry > curr_5m['VWAP'] else "inverse")
     c3.metric("Harga Saat Ini", f"Rp {entry:,.0f}")
-    c4.metric("Rekomendasi Max Lot", f"{total_lot} Lot")
+    
+    # Menumpuk Metrik di Kolom ke-4 (Lot & Skor)
+    with c4:
+        st.metric("Rekomendasi Max Lot", f"{total_lot} Lot")
+        st.metric("Skor Saham (0-100)", f"{skor_utama_final} / 90", "Layak Entry" if skor_utama_final >= 60 else "Beresiko", delta_color=warna_skor_utama)
     
     tab1, tab2, tab3 = st.tabs(["📊 Chart & Berita", "📋 Setup Eksekusi", "💰 Kalender Dividen"])
     
