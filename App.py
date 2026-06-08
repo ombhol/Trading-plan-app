@@ -7,7 +7,7 @@ import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
 
-st.set_page_config(page_title="Trading Plan Pro - Full Features", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Trading Plan Pro - Trending Detector", page_icon="📈", layout="wide")
 
 # --- STYLE PREMIUM ---
 st.markdown("""
@@ -24,10 +24,10 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🦅 DASHBOARD TRADING PLAN HARIAN & DETEKTOR EKSTREM")
-st.write(f"Analisis Pola Candlestick, Peringatan ARA/ARB & Info Dividen — Update: {date.today().strftime('%d %B %Y')}")
+st.title("🦅 DASHBOARD TRADING PLAN & DETEKTOR SAHAM TRENDING")
+st.write(f"Screener Otomatis Saham Berpotensi Trending Hari Ini & Besok — Update: {date.today().strftime('%d %B %Y')}")
 
-ticker_clean = st.text_input("Masukkan Kode Saham (Contoh: PTBA, BRMS, BBCA)", "PTBA").strip().upper()
+ticker_clean = st.text_input("Masukkan Kode Saham Utama (Contoh: PTBA, BRMS, BBCA)", "PTBA").strip().upper()
 ticker_code = f"{ticker_clean}.JK"
 
 st.markdown("---")
@@ -68,12 +68,12 @@ def ambil_berita_indonesia(ticker):
         pass
     return daftar_berita
 
-# --- PROSES UTAMA ---
+# --- PROSES UTAMA SAHAM UTAMA ---
 try:
     start_date = date.today() - timedelta(days=365)
     end_date = date.today()
     
-    with st.spinner(f'Sinkronisasi seluruh fitur saham {ticker_clean}...'):
+    with st.spinner(f'Menganalisis pergerakan market dan saham {ticker_clean}...'):
         ticker_obj = yf.Ticker(ticker_code)
         df_raw = yf.download(ticker_code, start=start_date, end=end_date, interval="1d")
         data_dividen = ambil_dividen_dari_finance(ticker_obj)
@@ -95,11 +95,61 @@ try:
         perubahan = harga_terakhir - harga_sebelumnya
         persentase_ubah = (perubahan / harga_sebelumnya) * 100
         
-        # Hitung Rata-rata Volume 20 Hari
+        # Analisis Volume Spike
         vol_series = pd.Series(volume_arr)
         vol_avg = float(vol_series.rolling(window=20).mean().iloc[-1])
+        vol_avg_5h = float(vol_series.tail(5).mean())
+        Rasio_Volume = volume_arr[-1] / vol_avg if vol_avg > 0 else 1.0
 
-        # --- LOGIKA DETEKSI POTENSI ARA / ARB ---
+        # --- SEKSI ANALISIS PREDIKSI TRENDING (HARI INI & BESOK) ---
+        st.subheader("🔮 ANALISIS PROYEKSI TRENDING (HARI INI & BESOK)")
+        
+        # Logika Prediksi Skor Trending
+        skor_trending = 0
+        faktor_pendukung = []
+        
+        if Rasio_Volume > 2.0:
+            skor_trending += 40
+            faktor_pendukung.append(f"Spike Volume Masif ({Rasio_Volume:.1f}x lipat dari rata-rata sebulan)")
+        elif Rasio_Volume > 1.2:
+            skor_trending += 20
+            faktor_pendukung.append("Volume di atas rata-rata wajar harian (+Akumulasi Awal)")
+            
+        if persentase_ubah > 3.0:
+            skor_trending += 30
+            faktor_pendukung.append(f"Breakout Bullish Kuat ({persentase_ubah:+.2f}%)")
+        elif persentase_ubah < -3.0:
+            skor_trending -= 20
+            faktor_pendukung.append(f"Tekanan Jual / Distribusi Kuat ({persentase_ubah:+.2f}%)")
+
+        # Indikator Candle Close mendekati High (Bagus untuk kelanjutan besok pagi)
+        rentang_harian = high_arr[-1] - low_arr[-1]
+        posisi_close = (harga_terakhir - low_arr[-1]) / rentang_harian if rentang_harian > 0 else 0.5
+        if posisi_close > 0.8 and persentase_ubah > 0:
+            skor_trending += 30
+            faktor_pendukung.append("Harga ditutup di area tertinggi harian (Potensi GAP UP besok pagi tinggi)")
+
+        # Tampilan Hasil Proyeksi
+        if skor_trending >= 60:
+            st.success(f"🔥 **POTENSI TRENDING SANGAT TINGGI ({skor_trending}%)**")
+            st.markdown(f"""
+            * **Analisis Besok:** Saham ini memiliki momentum beli yang sangat kuat hari ini. Kemungkinan besar pergerakan naik akan berlanjut besok pagi semenjak pembukaan bursa (*Open Gap Up*).
+            * **Faktor Kunci:** {', '.join(faktor_pendukung)}
+            """)
+        elif 30 <= skor_trending < 60:
+            st.warning(f"⚡ **POTENSI TRENDING MENENGAH / SIDEWAYS UP ({skor_trending}%)**")
+            st.markdown(f"""
+            * **Analisis Besok:** Saham mulai masuk radar akumulasi, namun pergerakannya cenderung akan menguji area *resistance* terdekat terlebih dahulu besok. Cocok untuk *Buy on Weakness*.
+            * **Faktor Kunci:** {', '.join(faktor_pendukung)}
+            """)
+        else:
+            st.info(f"⚪ **POTENSI TRENDING RENDAH / KONSOLIDASI ({skor_trending}%)**")
+            st.markdown(f"""
+            * **Analisis Besok:** Saham bergerak stabil atau cenderung mengalami tekanan konsolidasi. Pergerakan hari ini dan besok diperkirakan masih sepi dari pergerakan agresif.
+            * **Faktor Kunci:** {', '.join(faktor_pendukung) if faktor_pendukung else 'Tidak ada sinyal volatilitas signifikan'}
+            """)
+
+        # --- MONITORING ARA / ARB ---
         status_ekstrem = "NORMAL"
         pesan_ekstrem = ""
         warna_box = "#1f2937"
@@ -111,13 +161,17 @@ try:
         if ledakan_volume and harga_terkunci_atas and persentase_ubah > 4:
             status_ekstrem = "ARA_POTENTIAL"
             warna_box = "#10B981"
-            pesan_ekstrem = "🔥 MOMENTUM ARA / ACCUMULATION BOOM: Lonjakan volume masif terdeteksi! Buyer menguasai perdagangan hingga batas atas harian. Rekomendasi: Ikuti momentum searah (HOLD/BUY ON OPEN besok pagi jika berani risk tinggi)!"
-
+            pesan_ekstrem = "🔥 MOMENTUM ARA / ACCUMULATION BOOM: Pembeli mengunci harga hingga batas atas bursa!"
         elif harga_terkunci_bawah and persentase_ubah < -4:
             status_ekstrem = "ARB_WARNING"
             warna_box = "#EF4444"
-            pesan_ekstrem = "🚨 PERINGATAN ARB / PANIC SELLING DETECTED: Harga terkunci rapat di batas bawah harian oleh tekanan jual tanpa perlawanan berarti. Rekomendasi: JANGAN FOMO UNTUK SEROK BAWAH, amankan modal dan tunggu hingga panik mereda!"
+            pesan_ekstrem = "🚨 PERINGATAN ARB / PANIC SELLING: Harga terkunci di batas bawah harian oleh tekanan jual."
 
+        if status_ekstrem != "NORMAL":
+            st.markdown(f"<div style='background-color:{warna_box}; padding:15px; border-radius:8px; color:white; font-weight:bold; margin-top:10px;'>{pesan_ekstrem}</div>", unsafe_allow_html=True)
+
+        st.markdown("---")
+        
         # Hitung Pivot S&R
         high_5h, low_5h = float(max(high_arr[-5:])), float(min(low_arr[-5:]))
         pivot = (high_5h + low_5h + harga_terakhir) / 3
@@ -130,22 +184,9 @@ try:
         col_m2.metric("HARGA CLOSE TERAKHIR", f"Rp {harga_terakhir:,.0f}", f"{perubahan:+,.0f} ({persentase_ubah:+.2f}%)")
         col_m3.metric("VOLUME TRANSAKSI", f"{volume_arr[-1]/1e6:.1f} M", f"Rata-rata 20H: {vol_avg/1e6:.1f} M", delta_color="off")
 
-        st.markdown("---")
         col_left, col_right = st.columns([1, 1.2])
 
         with col_left:
-            # --- TAMPILAN MONITORING ARA / ARB KEMBALI AKTIF ---
-            st.subheader("🚨 MONITORING VOLATILITAS EKSTREM")
-            if status_ekstrem != "NORMAL":
-                st.markdown(f"""
-                    <div style='background-color:{warna_box}; padding:15px; border-radius:8px; color:white; font-weight:bold;'>
-                        {pesan_ekstrem}
-                    </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.info("⚪ **Status Pergerakan:** Pergerakan harga harian masih berada dalam batas wajar bursa (Tidak terdeteksi akumulasi/distribusi ekstrem ARA/ARB harian).")
-
-            st.write("---")
             st.subheader("🏹 TRADING PLAN SETUP")
             st.info(f"🛒 **BUY AREA:** Rp {int(s1):,.0f} - Rp {int(harga_terakhir):,.0f}")
             st.error(f"⚠️ **STOP LOSS (SL):** Rp {int(s2 * 0.99):,.0f}")
@@ -172,8 +213,6 @@ try:
                     </table>
                 </div>
                 """, unsafe_allow_html=True)
-            else:
-                st.info("⚪ Tidak ada data pengumuman dividen terbaru yang terdeteksi untuk emiten ini.")
 
             # --- SEKSI BERITA ---
             st.write("---")
