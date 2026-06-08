@@ -165,4 +165,26 @@ try:
                 st.markdown(f"""
                 <div style="background-color: #1f2937; padding: 15px; border-radius: 8px; border-left: 5px solid #10B981;">
                     <h5 style="margin:0; color:#10B981;">📢 Informasi Pembagian Dividen Tunai</h5>
-                    <p style="margin:
+                    <p style="margin:8px 0; color:white; font-size:16px;"><b>Besaran Dividen:</b> <span style="color:#10B981; font-weight:bold;">{data_dividen['nominal']}</span> per lembar saham</p>
+                    <table style="width:100%; margin-top:10px; color:white; font-size:14px;">
+                        <tr><td><b>📅 CUM DATE (Pasar Reguler):</b></td><td style="color:#FBBF24;"><b>{data_dividen['cum_date']}</b></td></tr>
+                        <tr><td><b>📅 EX DATE (Pasar Reguler):</b></td><td style="color:#EF4444;"><b>{data_dividen['ex_date']}</b></td></tr>
+                    </table>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.info("⚪ Tidak ada data pengumuman dividen terbaru yang terdeteksi untuk emiten ini.")
+
+            # --- SEKSI BERITA ---
+            st.write("---")
+            st.subheader("📰 AGREGATOR BERITA & SENTIMEN LOKAL (ID)")
+            if berita_lokal:
+                for item in berita_lokal:
+                    st.markdown(f"🔗 **[{item['title']}]({item['link']})**")
+                    st.caption(f"📰 {item['source']} | 🕒 {item['date']}")
+            else:
+                st.info(f"⚪ Tidak ditemukan berita spesifik harian.")
+    else:
+        st.error("Data saham tidak ditemukan.")
+except Exception as e:
+    st.error(f"Gagal memuat aplikasi: {str(e)}")
