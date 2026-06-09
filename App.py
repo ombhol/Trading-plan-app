@@ -279,7 +279,7 @@ if not df_5m.empty and not df_1d.empty:
             st.metric("Safe Lot Size", f"{total_lot} Lot", alasan_lot, delta_color="off")
             st.metric("Skor Saham (Max 90)", f"{skor_utama} / 90", delta_color="normal" if skor_utama >= 60 else "inverse")
         
-        tab1, tab2 = st.tabs(["📊 Eksekusi Order & Net PnL", "📰 Sentimen & Berita"])
+        tab1, tab2, tab3 = st.tabs(["📊 Eksekusi Order & Net PnL", "📰 Sentimen & Berita"])
         # Tambahkan ini di dalam Tab 1 (Eksekusi Order)
         st.markdown(f"### 📊 Status VWAP Intraday: **Rp {vwap_val:,.0f}**")
         if entry > vwap_val:
@@ -364,5 +364,8 @@ if not df_5m.empty and not df_1d.empty:
                     st.caption(f"🗞️ Sumber: {item['source']} | 🕒 {item['date']}")
             else:
                 st.info("Market sedang hening. Tidak ada katalis berita utama.")
+        with tab3:
+            uji coba show
+            
 else:
     st.error("Gagal menarik data. Pastikan format ticker benar (contoh: BBCA).")
