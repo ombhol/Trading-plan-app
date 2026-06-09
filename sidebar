@@ -1,0 +1,19 @@
+# ui/sidebar.py
+
+import streamlit as st
+from config.settings import DEFAULT_TICKER, DEFAULT_WATCHLIST
+
+def render_sidebar():
+    with st.sidebar:
+        st.markdown("### ⚙️ Parameter Trading (Real Market)")
+        ticker_utama = st.text_input("Analisis Saham Spesifik:", DEFAULT_TICKER).upper()
+        modal_trading = st.number_input("Total Portofolio (Rp):", value=1000000, step=1000000)
+        risiko_persen = st.slider("Risiko per Trade (%):", 0.1, 5.0, 2.0) / 100
+        fee_broker = st.number_input("Total Fee Jual+Beli (%):", value=0.4, step=0.1) / 100
+        
+        st.markdown("---")
+        st.markdown("### 📋 Daftar Pantauan (Scanner)")
+        saham_input_user = st.text_input("Daftar Saham:", value=DEFAULT_WATCHLIST)
+        daftar_pantauan = [s.strip().upper() for s in saham_input_user.split(",") if s.strip()]
+        
+        return ticker_utama, modal_trading, risiko_persen, fee_broker, daftar_pantauan
