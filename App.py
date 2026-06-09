@@ -90,7 +90,6 @@ def calculate_indicators(df):
     df['Cum_TP_Vol'] = df.groupby('Date')['TP_Vol'].cumsum()
     df['VWAP'] = df['Cum_TP_Vol'] / df['Cum_Vol'].replace(0, np.nan)
     
-    # Proteksi NaN pada Wilder's Smoothing RSI
     delta = df['Close'].diff().fillna(0)
     gain = delta.where(delta > 0, 0)
     loss = -delta.where(delta < 0, 0)
@@ -113,7 +112,6 @@ def calculate_indicators(df):
 # --- 3. FUNGSI AUTO-SCANNER ---
 def proses_satu_saham(ticker):
     try:
-        # Tanpa session global untuk mencegah ConnectionResetError pada Threading
         df = yf.download(f"{ticker}.JK", period="5d", interval="5m", progress=False)
         df = clean_yfinance_columns(df)
         if df.empty: return None
@@ -144,7 +142,6 @@ def proses_satu_saham(ticker):
 @st.cache_data(ttl=60) 
 def scan_top_saham(watchlist):
     hasil_scan = []
-    # Membatasi thread menjadi 5 agar yfinance tidak IP Ban (Rate limit: 2000 req/hour)
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = {executor.submit(proses_satu_saham, ticker): ticker for ticker in watchlist}
         for future in concurrent.futures.as_completed(futures):
@@ -205,12 +202,29 @@ with st.sidebar:
     saham_input_user = st.text_input("Daftar Saham:", value="MPMX, ASGR, LPPF, ROTI, CNMA, RALS, TAPG, UNIC, KKGI, CITA, PTBA, UNVR, SPTO, FWCT, LPIN, TLDN, BSSR, ADRO, MARK, TPMA, SGRO, TOTL, ARNA, POWR, HRXA, NRCA, MSTI, EAST, ACES, TOTO, SIDO, AUTO, TLKM")
     daftar_pantauan = [s.strip().upper() for s in saham_input_user.split(",") if s.strip()]
 
-# --- 6. UI MAIN: TOP REKOMENDASI ---
+# --- 6. UI MAIN: HEADER & PANDUAN ---
 st.title("🦅 TRADING PLAN PRO V8.2 (Street Smart Edition)")
 
 status_waktu, warna_waktu = cek_waktu_trading()
 getattr(st, warna_waktu)(f"🕒 **Sesi Trading BEI Saat Ini:** {status_waktu}")
 
+# [NEW] PANDUAN PENGGUNAAN (Expander agar rapi)
+with st.expander("📖 **Panduan Cepat (SOP Penggunaan Aplikasi)**", expanded=False):
+    st.markdown("""
+    **Ikuti 5 Langkah Taktis Berikut Sebelum Membeli Saham:**
+    
+    1. **Atur Amunisi (Sidebar Kiri):** Masukkan Total Modal yang siap di-tradingkan dan atur batas persentase *Cut Loss* (Risiko). Biarkan sistem menghitung Lot yang aman untuk Anda.
+    2. **Perhatikan Sesi Jam (Indikator Atas):** * **Pagi (09:00 - 10:00):** Sesi paling agresif. Eksekusi cepat.
+       * **Siang (10:00 - 14:00):** Rawan *sideways* dan *false breakout*. Disarankan *wait & see*.
+       * **Sore (14:00 - 16:00):** Waktu untuk mencari sinyal *Beli Sore Jual Pagi (BSJP)*.
+    3. **Pantau Scanner (Top 3 Sinyal):** Sistem akan menyaring puluhan saham dari Daftar Pantauan untuk mencari saham yang volume intraday-nya meledak (diakumulasi uang pintar).
+    4. **Deep Dive Emiten (Analisis Spesifik):** Jika ada saham menarik di *Top 3*, ketik kode sahamnya di kolom **Analisis Saham Spesifik** di sidebar kiri.
+    5. **Eksekusi Order (Aplikasi Sekuritas):** * **Beli (Entry):** Ikuti harga di *Skenario Entry Anti-Guyur*. Jangan langsung *all-in*, cicil di 2 titik.
+       * **Jumlah Beli:** Patuhi angka di metrik **Safe Lot Size**. Jika dibilang 50 Lot, jangan maksa beli 200 Lot agar tidak tersangkut likuiditas palsu.
+       * **Cut Loss Strict:** Segera buang di aplikasi sekuritas jika harga jatuh menyentuh batas ini. Tanpa kompromi.
+    """)
+
+# --- 7. UI MAIN: TOP REKOMENDASI ---
 st.subheader("🏆 Top 3 Sinyal (Real Turnover > 100 Jt/5 Menit)")
 with st.spinner("Memindai radar uang pintar secara paralel..."):
     top_3 = scan_top_saham(daftar_pantauan)
@@ -232,17 +246,16 @@ else:
     st.info("Scanner Kosong: Belum ada saham yang memenuhi kriteria.")
 st.markdown("---")
 
-# --- 7. UI MAIN: DEEP DIVE ANALISIS ---
+# --- 8. UI MAIN: DEEP DIVE ANALISIS ---
 st.subheader(f"🔎 Deep Dive Analisis: {ticker_utama}")
 
 df_5m, df_1d = get_market_data(ticker_utama)
 
 if not df_5m.empty and not df_1d.empty:
     
-    # [CRITICAL FIX] Injeksi Google Finance HANYA di bagian ini untuk 1 emiten
+    # Injeksi Real-time Google Finance
     harga_realtime_deep = ambil_harga_realtime_google(ticker_utama)
     if harga_realtime_deep and harga_realtime_deep > 0:
-        # Menimpa bar terakhir menggunakan index .loc agar aman secara struktur
         df_5m.loc[df_5m.index[-1], 'Close'] = harga_realtime_deep
         st.success(f"⚡ **Real-time Engine Active:** Terhubung ke Google Finance (Harga Live: Rp {harga_realtime_deep:,.0f})")
     else:
