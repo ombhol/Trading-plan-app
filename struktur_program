@@ -1,0 +1,20 @@
+trading_plan_pro/
+│
+├── app.py                      # File utama (Entry Point) untuk menjalankan Streamlit
+├── requirements.txt            # Daftar library Python (pandas, yfinance, bs4, dll.)
+│
+├── config/                     # Folder untuk pengaturan & parameter dasar
+│   ├── __init__.py
+│   └── settings.py             # Konfigurasi saham (watchlist), fee broker, & teks panduan
+│
+├── core/                       # Folder logika bisnis dan matematika pasar
+│   ├── __init__.py
+│   ├── data_fetcher.py         # Fungsi tarik data (YFinance + Scraper Google Finance)
+│   ├── indicators.py           # Fungsi kalkulasi teknikal (EMA, VWAP, RSI, ATR)
+│   └── bei_rules.py            # Logika regulasi BEI (Fraksi harga, batas ARA/ARB simetris)
+│
+└── ui/                         # Folder untuk komponen visual Streamlit
+    ├── __init__.py
+    ├── sidebar.py              # Komponen input parameter di sidebar
+    ├── components.py           # Komponen kartu skor, tabel nett cuan, dan tab berita
+    └── charts.py               # Komponen visualisasi grafik Plotly Candlestick
