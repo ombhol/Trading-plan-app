@@ -158,8 +158,8 @@ def get_market_data(ticker):
 with st.sidebar:
     st.markdown("### ⚙️ Parameter Trading (Real Market)")
     ticker_utama = st.text_input("Analisis Saham Spesifik:", "PSAB").upper()
-    modal_trading = st.number_input("Total Portofolio (Rp):", value=10000000, step=1000000)
-    risiko_persen = st.slider("Risiko per Trade (%):", 0.1, 5.0, 1.0) / 100
+    modal_trading = st.number_input("Total Portofolio (Rp):", value=1000000, step=1000000)
+    risiko_persen = st.slider("Risiko per Trade (%):", 0.1, 5.0, 2.0) / 100
     fee_broker = st.number_input("Total Fee Jual+Beli (%):", value=0.4, step=0.1) / 100
     
     st.markdown("---")
