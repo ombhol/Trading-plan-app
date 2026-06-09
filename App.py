@@ -366,8 +366,8 @@ if not df_5m.empty and not df_1d.empty:
                 st.info("Market sedang hening. Tidak ada katalis berita utama.")
         with tab3:
             st.subheader ("Rules wajib BACA")
-            st.markdown("---")
-            st.markdown(f "1. Persiapan Awal (Sidebar)")
+           
+            
             
 else:
     st.error("Gagal menarik data. Pastikan format ticker benar (contoh: BBCA).")
