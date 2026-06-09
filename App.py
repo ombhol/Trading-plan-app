@@ -261,18 +261,31 @@ if not df_5m.empty and not df_1d.empty:
         elif curr_5m['RSI'] >= 70: skor_utama -= 20
         if curr_5m['Volume'] > curr_5m['Vol_MA20']: skor_utama += 20
         
+        # --- PERBAIKAN TAMPILAN METRIK VWAP ---
+        # Memastikan nilai VWAP bukan NaN
+        vwap_val = curr_5m['VWAP'] if pd.notnull(curr_5m['VWAP']) else 0
+        jarak_vwap_persen = ((entry - vwap_val) / vwap_val * 100) if vwap_val > 0 else 0
+
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Tren (Daily)", tren_harian)
-        c2.metric("Turnover / 5m", f"Rp {turnover_5m_rata_rata / 1000000:,.0f} Jt", "Likuiditas Riil", delta_color="off")
+        
+        # Di sini kita menampilkan nominal VWAP secara eksplisit
+        c2.metric("Harga VWAP", f"Rp {vwap_val:,.0f}", f"{jarak_vwap_persen:+.2f}%", delta_color="normal" if entry > vwap_val else "inverse")
+        
         c3.metric("Harga Saat Ini", f"Rp {entry:,.0f}", f"{persen_kenaikan:+.2f}%")
         
         with c4:
-            alasan_lot = "Mentok Kapasitas Serap Pasar" if lot_by_liquidity < lot_by_risk else "Profil Risiko Modal"
+            alasan_lot = "Dibatasi Likuiditas Pasar" if lot_by_liquidity < lot_by_risk else "Berdasarkan Profil Risiko"
             st.metric("Safe Lot Size", f"{total_lot} Lot", alasan_lot, delta_color="off")
             st.metric("Skor Saham (Max 90)", f"{skor_utama} / 90", delta_color="normal" if skor_utama >= 60 else "inverse")
         
         tab1, tab2 = st.tabs(["📊 Eksekusi Order & Net PnL", "📰 Sentimen & Berita"])
-        
+        # Tambahkan ini di dalam Tab 1 (Eksekusi Order)
+        st.markdown(f"### 📊 Status VWAP Intraday: **Rp {vwap_val:,.0f}**")
+        if entry > vwap_val:
+            st.write("✅ Harga berada **DI ATAS** VWAP (Area Akumulasi)")
+        else:
+            st.write("⚠️ Harga berada **DI BAWAH** VWAP (Area Distribusi/Wait & See)")
         with tab1:
             col_plan, col_rules = st.columns([1.5, 1])
             entry_cicil_1 = sesuaikan_fraksi_bei(entry)
