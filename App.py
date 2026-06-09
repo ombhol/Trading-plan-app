@@ -367,7 +367,7 @@ if not df_5m.empty and not df_1d.empty:
         with tab3:
             st.subheader ("Rules wajib BACA")
             st.markdown("---")
-            st.markdown("1. Persiapan Awal (Sidebar)
+            st.markdown(f "1. Persiapan Awal (Sidebar)
 Total Portofolio: Masukkan modal riil yang Anda siapkan untuk satu trade (bukan total kekayaan). Sistem akan menghitung Safe Lot berdasarkan angka ini.
 
 Fee Broker: Sesuaikan dengan biaya sekuritas Anda (rata-rata 0.4% total Beli + Jual). Ini krusial agar target profit Anda tidak "boncos" dimakan biaya.
