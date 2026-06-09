@@ -367,7 +367,60 @@ if not df_5m.empty and not df_1d.empty:
         with tab3:
             st.subheader ("Rules wajib BACA")
             st.markdown("---")
-            st.markdown("### 🛡️ Kalkulasi Target Uang Masuk Kantong (Nett)")
+            st.markdown("### 🛡️ Kalkulasi Target Uang Masuk Kantong (Nett) 1. Persiapan Awal (Sidebar)
+Total Portofolio: Masukkan modal riil yang Anda siapkan untuk satu trade (bukan total kekayaan). Sistem akan menghitung Safe Lot berdasarkan angka ini.
+
+Fee Broker: Sesuaikan dengan biaya sekuritas Anda (rata-rata 0.4% total Beli + Jual). Ini krusial agar target profit Anda tidak "boncos" dimakan biaya.
+
+Daftar Pantauan: Masukkan kode saham yang Anda pantau, dipisahkan koma.
+
+Tips: Jangan masukkan lebih dari 10 saham agar scanner bekerja cepat dan akurat.
+
+2. Fase Pemindaian (Top Recommendations)
+Setiap 2-5 menit sekali, scanner akan menampilkan Top 3 Saham.
+
+Skor 60-70: Sinyal Watchlist (Perhatikan, jangan beli dulu).
+
+Skor 70+: Sinyal High Probability (Perhatikan volume dan struktur harga).
+
+Jika Tidak Muncul: Artinya pasar sedang konsolidasi atau tidak ada saham yang memenuhi syarat volume/uang pintar hari ini. Jangan dipaksakan beli.
+
+3. Fase Eksekusi (Deep Dive)
+Saat Anda masuk ke analisis saham spesifik, ikuti urutan logika ini:
+
+A. Validasi Tren & Likuiditas
+Cek "Turnover/5m": Jika di bawah Rp 100 Juta, hindari! Saham ini "kopong", mudah digerakkan bandar, dan susah dijual saat Anda mau Cut Loss.
+
+Cek Tren (Daily): * UPTREND 🟢: Anda bermain searah arus. Bisa ambil posisi penuh sesuai Lot Size.
+
+DOWNTREND 🔴: Anda melawan arus. Wajib gunakan taktik Rebound Play (Scalping).
+
+B. Strategi Entry (Anti-Guyur)
+Sistem membagi pembelian menjadi 2 Tranche agar Anda tidak menjadi exit liquidity bandar:
+
+Tranche 1 (30-50% Modal): Entry di harga pasar saat ini (jika tidak terlalu jauh dari VWAP).
+
+Tranche 2 (50-70% Modal): Antre beli di harga VWAP atau EMA20.
+
+Aturan: Jika harga sudah melesat > 5% dari VWAP, DILARANG melakukan Hajar Kanan (HAKA). Tunggu pullback atau cari saham lain.
+
+4. Fase Exit (Take Profit & Stop Loss)
+Jangan menebak-nebak harga jual. Gunakan hasil kalkulasi sistem:
+
+TP1 (Quick Scalp): Gunakan untuk membuang 50% barang sesegera mungkin saat profit untuk mengamankan fee broker dan sedikit keuntungan.
+
+TP2 (Swing Intraday): Biarkan 50% sisanya berjalan jika tren kuat, gunakan sebagai bonus.
+
+Stop Loss (Strict): Jika harga menyentuh angka STOP LOSS, Wajib Jual. Jangan pernah berharap "mudah-mudahan balik lagi". Day trader yang tidak disiplin SL akan berakhir menjadi investor dadakan.
+
+⚠️ Golden Rules (Wajib Diingat)
+Dilarang "Inap" (Hold Overnight) pada Saham Downtrend: Jika sistem memberi peringatan Downtrend, Anda wajib keluar sebelum pasar tutup (15:50 WIB). Saham downtrend sangat rawan dibuka Gap Down (AR B) keesokan paginya.
+
+Satu Sinyal, Satu Rencana: Begitu Anda masuk di harga yang ditentukan sistem, pasang antrean jual (TP1/TP2) dan antrean jual rugi (SL) secara berurutan di sekuritas Anda. Jangan biarkan layar kosong tanpa rencana.
+
+Hormati Batas Likuiditas: Jangan pernah membeli lebih dari Safe Lot Size yang disarankan sistem. Jika sistem bilang "Dibatasi Likuiditas Pasar", artinya saham tersebut memang tidak sanggup menampung modal besar Anda.
+
+Saran penggunaan: Buka dashboard ini di layar kedua (sebelah kanan), dan aplikasi sekuritas Anda di layar utama (sebelah kiri). Gunakan sistem ini sebagai "Kompas" untuk memvalidasi insting Anda, bukan sebagai perintah beli membabi buta.")
            
             
             
