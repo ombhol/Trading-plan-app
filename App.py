@@ -366,6 +366,8 @@ if not df_5m.empty and not df_1d.empty:
                 st.info("Market sedang hening. Tidak ada katalis berita utama.")
         with tab3:
             st.subheader ("Rules wajib BACA")
+            st.markdown("---")
+            st.markdown("### 🛡️ Kalkulasi Target Uang Masuk Kantong (Nett)")
            
             
             
