@@ -1,0 +1,35 @@
+# core/bei_rules.py
+
+import math
+from datetime import datetime, timedelta
+
+def sesuaikan_fraksi_bei(harga, tipe='normal'):
+    harga = int(round(harga))
+    if harga < 50: return 50
+    elif harga < 200: fraksi = 1
+    elif harga < 500: fraksi = 2
+    elif harga < 2000: fraksi = 5
+    elif harga < 5000: fraksi = 10
+    else: fraksi = 25
+    
+    if tipe in ['sl', 'tp']:
+        return math.floor(harga / fraksi) * fraksi
+    else:
+        return round(harga / fraksi) * fraksi
+
+def hitung_batas_ara_arb(close_kemarin):
+    if close_kemarin < 200: limit = 0.35 
+    elif close_kemarin <= 5000: limit = 0.25 
+    else: limit = 0.20 
+        
+    ara = sesuaikan_fraksi_bei(close_kemarin * (1 + limit))
+    arb = sesuaikan_fraksi_bei(close_kemarin * (1 - limit))
+    if arb < 50: arb = 50 
+    return ara, arb
+
+def cek_waktu_trading():
+    waktu_sekarang = datetime.utcnow() + timedelta(hours=7)
+    jam = waktu_sekarang.hour
+    if 9 <= jam < 10: return "Pagi (High Probability - Volatilitas Tinggi) 🔥", "success"
+    elif 10 <= jam < 14: return "Siang (Low Probability - Rawan Jebakan / Sideways) ⚠️", "warning"
+    else: return "Sore (Fase Penutupan / Mark-up Bandar) 📊", "info"
