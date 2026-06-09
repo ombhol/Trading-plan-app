@@ -1,0 +1,25 @@
+# config/settings.py
+
+APP_TITLE = "Trading Plan Pro V8.2"
+APP_ICON = "🦅"
+USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
+DEFAULT_TICKER = "PSAB"
+DEFAULT_WATCHLIST = "MPMX, ASGR, LPPF, ROTI, CNMA, RALS, TAPG, UNIC, KKGI, CITA, PTBA, UNVR, SPTO, FWCT, LPIN, TLDN, BSSR, ADRO, MARK, TPMA, SGRO, TOTL, ARNA, POWR, HRXA, NRCA, MSTI, EAST, ACES, TOTO, SIDO, AUTO, TLKM"
+
+SOP_TEXT = """
+### 🎯 5 Langkah Eksekusi Taktis
+1. **Atur Amunisi (Sidebar Kiri):** Masukkan Total Modal dan atur batas persentase *Cut Loss*. Sistem akan menghitung Lot maksimal.
+2. **Perhatikan Sesi Jam:** * **Pagi (09:00 - 10:00 WIB):** Sesi paling agresif. Volatilitas sangat tinggi.
+   * **Siang (10:00 - 14:00 WIB):** Rawan *sideways* dan *false breakout*. Disarankan *wait & see*.
+   * **Sore (14:00 - 16:00 WIB):** Waktu ideal mencari sinyal akumulasi untuk strategi Beli Sore Jual Pagi (BSJP).
+3. **Pantau Scanner (Top 3):** Cari emiten yang volume intraday-nya sedang diakumulasi.
+4. **Deep Dive Emiten:** Ketik kode saham incaran dari *Top 3* ke kolom sidebar kiri.
+5. **Eksekusi Order:** Patuhi **Skenario Entry Anti-Guyur** (cicil 2 titik) dan patuhi **Safe Lot Size**.
+
+---
+### ⚠️ Rules Sistem & Keamanan Portofolio
+* **Keamanan Anti-Ban:** Menggunakan asinkronus `yfinance` untuk Scanner dan *Real-Time Injection* via Google Finance untuk Deep Dive.
+* **Disiplin Cut Loss:** Eksekusi di aplikasi sekuritas tanpa kompromi bila menyentuh angka **Stop Loss Strict**.
+* **Validasi Likuiditas:** Cek ketebalan lot *Bid-Offer* sebelum eksekusi HAKA.
+"""
