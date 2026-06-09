@@ -279,7 +279,7 @@ if not df_5m.empty and not df_1d.empty:
             st.metric("Safe Lot Size", f"{total_lot} Lot", alasan_lot, delta_color="off")
             st.metric("Skor Saham (Max 90)", f"{skor_utama} / 90", delta_color="normal" if skor_utama >= 60 else "inverse")
         
-        tab1, tab2, tab3 = st.tabs(["📊 Eksekusi Order & Net PnL", "📰 Sentimen & Berita"])
+        tab1, tab2, tab3 = st.tabs(["📊 Eksekusi Order & Net PnL", "📰 Sentimen & Berita", "Rules"])
         # Tambahkan ini di dalam Tab 1 (Eksekusi Order)
         st.markdown(f"### 📊 Status VWAP Intraday: **Rp {vwap_val:,.0f}**")
         if entry > vwap_val:
