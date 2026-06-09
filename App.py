@@ -11,7 +11,7 @@ import concurrent.futures
 import requests
 
 # --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="Trading Plan Pro V7.9", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Trading Plan Pro V8.1", layout="wide", page_icon="🦅")
 
 # --- INIT SESSION (ANTI IP-BAN) ---
 session = requests.Session()
@@ -19,7 +19,7 @@ session.headers.update({
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 })
 
-# --- 1. FUNGSI UTILITAS & INDIKATOR ---
+# --- 1. FUNGSI UTILITAS & LOGIKA LAPANGAN BEI ---
 def sesuaikan_fraksi_bei(harga):
     """Membulatkan harga ke fraksi harga resmi Bursa Efek Indonesia."""
     harga = int(harga)
@@ -31,8 +31,23 @@ def sesuaikan_fraksi_bei(harga):
     else: fraksi = 25
     return round(harga / fraksi) * fraksi
 
+def hitung_batas_ara_arb(close_kemarin):
+    """Menghitung batas persentase ARA & ARB Simetris BEI terbaru."""
+    if close_kemarin < 200:
+        limit = 0.35 # 35%
+    elif close_kemarin <= 5000:
+        limit = 0.25 # 25%
+    else:
+        limit = 0.20 # 20%
+        
+    ara = sesuaikan_fraksi_bei(close_kemarin * (1 + limit))
+    arb = sesuaikan_fraksi_bei(close_kemarin * (1 - limit))
+    
+    # Proteksi saham gocap agar ARB tidak di bawah 50
+    if arb < 50: arb = 50 
+    return ara, arb
+
 def calculate_daily_atr(df_1d):
-    """Menghitung nilai ATR (Average True Range) harian."""
     if df_1d.empty or len(df_1d) < 15: return 0
     hl = df_1d['High'] - df_1d['Low']
     hc = np.abs(df_1d['High'] - df_1d['Close'].shift())
@@ -41,7 +56,6 @@ def calculate_daily_atr(df_1d):
     return atr_daily.iloc[-1]
 
 def calculate_indicators(df):
-    """Kalkulasi indikator teknikal utama dengan reset harian VWAP."""
     if df.empty: return df
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['Date'] = df.index.date
@@ -61,10 +75,16 @@ def calculate_indicators(df):
     hc = np.abs(df['High'] - df['Close'].shift())
     lc = np.abs(df['Low'] - df['Close'].shift())
     df['ATR'] = pd.concat([hl, hc, lc], axis=1).max(axis=1).rolling(14).mean()
+    
     df['Vol_MA20'] = df['Volume'].rolling(20).mean()
+    
+    # --- LOGIKA LAPANGAN 2: Turnover (Nilai Uang Riil) ---
+    df['Turnover_5m'] = df['Volume'] * df['Close']
+    df['Turnover_MA20'] = df['Turnover_5m'].rolling(20).mean()
+    
     return df
 
-# --- 2. FUNGSI AUTO-SCANNER (MULTI-THREADING ENGINE) ---
+# --- 2. FUNGSI AUTO-SCANNER ---
 def proses_satu_saham(ticker):
     try:
         df = yf.download(f"{ticker}.JK", period="5d", interval="5m", progress=False, session=session)
@@ -72,12 +92,13 @@ def proses_satu_saham(ticker):
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         
         df = calculate_indicators(df)
-        df_clean = df.dropna(subset=['VWAP', 'EMA20', 'RSI', 'Vol_MA20'])
+        df_clean = df.dropna(subset=['VWAP', 'EMA20', 'RSI', 'Vol_MA20', 'Turnover_MA20'])
         if df_clean.empty: return None
         
         curr = df_clean.iloc[-1]
         
-        if curr['Close'] <= 50 or curr['Vol_MA20'] < 1000:
+        # Filter Saham Gocap & Turnover Palsu (Minimal Rp 100 Juta per 5 menit)
+        if curr['Close'] <= 50 or curr['Turnover_MA20'] < 100000000:
             return None
             
         skor = 0
@@ -102,7 +123,6 @@ def scan_top_saham(watchlist):
             result = future.result()
             if result:
                 hasil_scan.append(result)
-                
     return sorted(hasil_scan, key=lambda x: x['skor'], reverse=True)[:3]
 
 # --- 3. FUNGSI DATA KORPORASI ---
@@ -148,9 +168,9 @@ with st.sidebar:
     daftar_pantauan = [s.strip().upper() for s in saham_input_user.split(",") if s.strip()]
 
 # --- 5. UI MAIN: TOP REKOMENDASI ---
-st.title("🦅 TRADING PLAN PRO V7.9 (Day Trading)")
-st.subheader("🏆 Top 3 Sinyal (Anti-Gocap & Likuid)")
-with st.spinner("Memindai anomali volume & akumulasi secara paralel (Asynchronous)..."):
+st.title("🦅 TRADING PLAN PRO V8.1 (Street Smart)")
+st.subheader("🏆 Top 3 Sinyal (Real Turnover > 100 Jt/5 Menit)")
+with st.spinner("Memindai anomali uang pintar secara paralel..."):
     top_3 = scan_top_saham(daftar_pantauan)
 
 if top_3:
@@ -168,7 +188,7 @@ if top_3:
             </div>
             """, unsafe_allow_html=True)
 else:
-    st.info("Scanner Kosong: Belum ada saham yang likuid & memenuhi syarat struktur uptrend saat ini.")
+    st.info("Scanner Kosong: Belum ada saham yang memenuhi batas Turnover uang riil & struktur uptrend.")
 st.markdown("---")
 
 # --- 6. UI MAIN: DEEP DIVE ANALISIS ---
@@ -177,7 +197,7 @@ df_5m, df_1d = get_market_data(ticker_utama)
 
 if not df_5m.empty and not df_1d.empty:
     df_5m = calculate_indicators(df_5m)
-    df_clean = df_5m.dropna(subset=['VWAP', 'EMA20', 'RSI', 'Vol_MA20'])
+    df_clean = df_5m.dropna(subset=['VWAP', 'EMA20', 'RSI', 'Vol_MA20', 'Turnover_MA20'])
     
     if df_clean.empty:
         st.warning("Data kurang (kemungkinan saham baru IPO atau suspen panjang).")
@@ -196,25 +216,44 @@ if not df_5m.empty and not df_1d.empty:
         persen_kenaikan = ((entry - close_kemarin) / close_kemarin) * 100 if close_kemarin > 0 else 0
         jarak_vwap_persen = ((entry - curr_5m['VWAP']) / curr_5m['VWAP']) * 100
         
+        # --- LOGIKA LAPANGAN 1: Hitung Batas ARA / ARB ---
+        batas_ara, batas_arb = hitung_batas_ara_arb(close_kemarin)
+        
         atr_daily = calculate_daily_atr(df_1d)
         atr_final = atr_daily if atr_daily > 0 else (curr_5m['ATR'] * 5)
         
-        sl_mentah = entry - (atr_final * 1.5)
-        tp_mentah = entry + (atr_final * 3.0)
-        
+        # Kalkulasi Stop Loss & Pembatasan oleh ARB
+        sl_mentah = entry - (atr_final * 1.0)
         sl = sesuaikan_fraksi_bei(sl_mentah)
-        tp = sesuaikan_fraksi_bei(tp_mentah)
+        if sl <= batas_arb:
+            sl = batas_arb # SL mentok di ARB
+            
+        # Kalkulasi TP1 & TP2 & Pembatasan oleh ARA
+        batas_tp_min = entry * (1 + fee_broker + 0.005) 
+        tp1_mentah = entry + (curr_5m['ATR'] * 3.0) 
+        if tp1_mentah < batas_tp_min: tp1_mentah = batas_tp_min
         
+        tp2_mentah = entry + (atr_final * 0.5) 
+        if tp2_mentah <= tp1_mentah: tp2_mentah = tp1_mentah + (curr_5m['ATR'] * 3.0)
+            
+        tp1 = sesuaikan_fraksi_bei(tp1_mentah)
+        tp2 = sesuaikan_fraksi_bei(tp2_mentah)
+        
+        # Tidak ada target profit yang bisa melebihi batas ARA hari ini
+        if tp1 > batas_ara: tp1 = batas_ara
+        if tp2 > batas_ara: tp2 = batas_ara
+        
+        # Manajemen Lot & Likuiditas Riil
         jarak_sl_rp = entry - sl
         lot_by_risk = int(((modal_trading * risiko_persen) / max(1, jarak_sl_rp)) / 100) if jarak_sl_rp > 0 else 0
         
         rata_volume_pasar_lot = curr_5m['Vol_MA20'] / 100
-        lot_by_liquidity = int(rata_volume_pasar_lot * 0.05)
+        lot_by_liquidity = int(rata_volume_pasar_lot * 0.05) 
         total_lot = min(lot_by_risk, lot_by_liquidity)
         
-        target_bruto_persen = ((tp - entry) / entry)
-        peringatan_fee = True if target_bruto_persen <= fee_broker else False
-
+        # Validasi Turnover Uang (Hindari Saham Ilusi)
+        turnover_5m_rata_rata = curr_5m['Turnover_MA20']
+        
         skor_utama = 0
         if entry > curr_5m['VWAP']: skor_utama += 30
         if entry > curr_5m['EMA20']: skor_utama += 20
@@ -224,15 +263,15 @@ if not df_5m.empty and not df_1d.empty:
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Tren (Daily)", tren_harian)
-        c2.metric("Posisi Thd VWAP", f"Rp {curr_5m['VWAP']:,.0f}", f"{jarak_vwap_persen:+.2f}%", delta_color="normal" if entry > curr_5m['VWAP'] else "inverse")
+        c2.metric("Turnover / 5m", f"Rp {turnover_5m_rata_rata / 1000000:,.0f} Jt", "Likuiditas Riil", delta_color="off")
         c3.metric("Harga Saat Ini", f"Rp {entry:,.0f}", f"{persen_kenaikan:+.2f}%")
         
         with c4:
-            alasan_lot = "Dibatasi Likuiditas Pasar" if lot_by_liquidity < lot_by_risk else "Berdasarkan Profil Risiko"
+            alasan_lot = "Mentok Kapasitas Serap Pasar" if lot_by_liquidity < lot_by_risk else "Profil Risiko Modal"
             st.metric("Safe Lot Size", f"{total_lot} Lot", alasan_lot, delta_color="off")
             st.metric("Skor Saham (Max 90)", f"{skor_utama} / 90", delta_color="normal" if skor_utama >= 60 else "inverse")
         
-        tab1, tab2 = st.tabs(["📊 Eksekusi Order", "📰 Sentimen & Berita"])
+        tab1, tab2 = st.tabs(["📊 Eksekusi Order & Net PnL", "📰 Sentimen & Berita"])
         
         with tab1:
             col_plan, col_rules = st.columns([1.5, 1])
@@ -243,36 +282,58 @@ if not df_5m.empty and not df_1d.empty:
             with col_plan:
                 st.markdown("### 🎯 Skenario Entry Anti-Guyur")
                 if persen_kenaikan > 5.5 or jarak_vwap_persen > 2.5:
-                    st.warning(f"🚨 **RAWAN GUYURAN:** Harga lari {jarak_vwap_persen:.1f}% di atas modal institusi (VWAP).")
+                    st.warning(f"🚨 **RAWAN GUYURAN:** Harga lari {jarak_vwap_persen:.1f}% di atas rata-rata modal bandar (VWAP).")
                     st.write(f"🔹 **Tranche 1 (Test Water - 30%):** Rp {entry_cicil_1}")
                     st.write(f"🔥 **Tranche 2 (Area Pullback - 70%):** Rp {entry_cicil_2}")
                 else:
-                    st.success("✅ **ZONA AKUMULASI AMAN:** Deviasi normal terhadap VWAP.")
+                    st.success("✅ **ZONA AKUMULASI AMAN:** Harga masih stabil di basis pergerakan hari ini.")
                     st.write(f"🔹 **Tranche 1 (Masuk Awal - 50%):** Rp {entry_cicil_1}")
                     st.write(f"🔹 **Tranche 2 (Jaring Bawah - 50%):** Rp {entry_cicil_2}")
 
                 st.markdown("---")
-                st.markdown("### 🛡️ Kalkulasi Target Nett")
+                st.markdown("### 🛡️ Kalkulasi Target Uang Masuk Kantong (Nett)")
                 
-                if peringatan_fee:
-                    st.error(f"📉 **TAKE PROFIT (Rp {tp:,.0f}):** Target terlalu dekat! Profit kotor hanya {target_bruto_persen*100:.2f}%, tidak menutup Fee Broker ({fee_broker*100:.2f}%).")
-                else:
-                    st.success(f"📈 **TAKE PROFIT:** Rp {tp:,.0f} *(Menutup Fee Broker + Profit)*")
+                modal_terpakai = entry * total_lot * 100
+                
+                if modal_terpakai > 0:
+                    # TP1 NETT
+                    jual_tp1_val = tp1 * total_lot * 100
+                    estimasi_fee_tp1 = (modal_terpakai + jual_tp1_val) * (fee_broker / 2)
+                    net_rp_tp1 = (jual_tp1_val - modal_terpakai) - estimasi_fee_tp1
+                    net_persen_tp1 = (net_rp_tp1 / modal_terpakai) * 100
                     
-                st.error(f"📉 **STOP LOSS STRICT:** Rp {sl:,.0f}")
+                    # TP2 NETT
+                    jual_tp2_val = tp2 * total_lot * 100
+                    estimasi_fee_tp2 = (modal_terpakai + jual_tp2_val) * (fee_broker / 2)
+                    net_rp_tp2 = (jual_tp2_val - modal_terpakai) - estimasi_fee_tp2
+                    net_persen_tp2 = (net_rp_tp2 / modal_terpakai) * 100
+                    
+                    if net_persen_tp1 <= 0:
+                        st.error(f"⚠️ **TP1 (Rp {tp1:,}):** Kenaikan tertahan batas ARA atau terlalu tipis. Profit kotor habis dimakan fee sekuritas.")
+                    else:
+                        st.success(f"🎯 **TP1 (Buang 50% / Quick Scalp): Rp {tp1:,}** | Cuan Bersih: {net_persen_tp1:.1f}% (Est. Rp {net_rp_tp1:,.0f})")
+                        
+                    st.info(f"🚀 **TP2 (Buang Sisa / Swing Intraday): Rp {tp2:,}** | Cuan Bersih: {net_persen_tp2:.1f}% (Est. Rp {net_rp_tp2:,.0f})")
+                else:
+                    st.warning("Lot size 0. Jarak Stop Loss terlalu lebar atau Likuiditas saham mati.")
+                    
+                st.error(f"📉 **STOP LOSS STRICT:** Rp {sl:,.0f} *(Batas ARB Hari Ini: Rp {batas_arb:,.0f})*")
+                st.caption(f"🚀 *Batas ARA Hari Ini: Rp {batas_ara:,.0f}*")
                 
             with col_rules:
                 st.markdown("### 📝 Validasi Real Market (Day Trading)")
-                if tren_harian == "DOWNTREND 🔴" and skor_utama >= 60:
-                    st.warning("⚠️ **REBOUND PLAY (Scalping Only):** Tren makro turun, tapi ada momentum *mark-up* intraday. Wajib *Fast In, Fast Out* (Hit & Run). Dilarang keras menahan barang sampai besok!")
+                
+                # Cek Turnover Palsu (Kurang dari Rp 100 Jt per 5 menit)
+                if turnover_5m_rata_rata < 100000000:
+                    st.error(f"❌ **Saham Ilusi (Low Turnover):** Perputaran uang cuma Rp {turnover_5m_rata_rata/1000000:,.0f} Juta/5 menit. Sangat mudah dimanipulasi (Bid-Offer kopong). Hindari!")
+                elif tren_harian == "DOWNTREND 🔴" and skor_utama >= 60:
+                    st.warning("⚠️ **REBOUND PLAY (Scalping Only):** Tren makro turun, tapi ada pantulan teknikal. Wajib Hit & Run. Dilarang Inap!")
                 elif tren_harian == "DOWNTREND 🔴": 
-                    st.error("❌ **Trend Hancur & Tanpa Momentum:** Melawan arus tanpa ada tanda perlawanan intraday. Skip!")
-                elif lot_by_liquidity < 100:
-                    st.error("❌ **Saham Sepi (Illiquid):** Transaksi sangat tipis. Rawan tidak bisa jualan (nyangkut) jika masuk barang.")
+                    st.error("❌ **Trend Hancur:** Melawan arus tanpa ada volume beli riil. Skip!")
                 elif persen_kenaikan > 8.0: 
-                    st.error("❌ **Ekstrem FOMO:** Harga sudah terbang. Hindari menjadi \"Exit Liquidity\" (tempat jualan) bandar di pucuk.")
+                    st.error("❌ **Ekstrem FOMO:** Harga sudah terbang mendekati ARA. Cari emiten lain agar tidak jadi exit liquidity bandar.")
                 else: 
-                    st.success("🚀 **Clear for Takeoff:** Trend besar mendukung, akumulasi intraday aktif, likuiditas memadai.")
+                    st.success("🚀 **Clear for Takeoff:** Trend besar mendukung, turnover uang tebal, likuiditas memadai.")
                     
             st.markdown("---")
             fig = go.Figure()
