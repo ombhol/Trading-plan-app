@@ -1,0 +1,96 @@
+# core/data_fetcher.py
+
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import requests
+import urllib.request
+import urllib.parse
+import xml.etree.ElementTree as ET
+import concurrent.futures
+from bs4 import BeautifulSoup
+from config.settings import USER_AGENT
+from core.indicators import calculate_indicators
+
+def clean_yfinance_columns(df):
+    if not df.empty and isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    return df
+
+def ambil_harga_realtime_google(ticker):
+    url = f"https://www.google.com/finance/quote/{ticker}:IDX"
+    headers = {'User-Agent': USER_AGENT}
+    try:
+        response = requests.get(url, headers=headers, timeout=5)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            elemen_harga = soup.find('div', {'class': 'ymr60b'})
+            if elemen_harga:
+                harga_teks = elemen_harga.text.replace("Rp", "").replace(".", "").replace(",", "").strip()
+                return float(harga_teks)
+    except Exception: pass
+    return None
+
+@st.cache_data(ttl=1800)
+def ambil_berita_indonesia(ticker):
+    daftar_berita = []
+    try:
+        query = urllib.parse.quote(f"{ticker} saham")
+        url = f"https://news.google.com/rss/search?q={query}&hl=id-ID&gl=ID&ceid=ID:id"
+        req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            root = ET.fromstring(response.read())
+        for item in root.findall('.//item')[:5]:
+            title = item.find('title').text
+            if " - " in title: title = title.rsplit(" - ", 1)[0]
+            source = item.find('source').text if item.find('source') is not None else "Media"
+            pub_date = item.find('pubDate').text[:16] if item.find('pubDate') is not None else ""
+            daftar_berita.append({"title": title, "link": item.find('link').text, "source": source, "date": pub_date})
+    except Exception: pass
+    return daftar_berita
+
+@st.cache_data(ttl=60)
+def get_market_data(ticker):
+    try:
+        df_5m = yf.download(f"{ticker}.JK", period="5d", interval="5m", progress=False)
+        df_1d = yf.download(f"{ticker}.JK", period="3mo", interval="1d", progress=False)
+        return clean_yfinance_columns(df_5m), clean_yfinance_columns(df_1d)
+    except Exception: 
+        return pd.DataFrame(), pd.DataFrame()
+
+def proses_satu_saham(ticker):
+    try:
+        df = yf.download(f"{ticker}.JK", period="5d", interval="5m", progress=False)
+        df = clean_yfinance_columns(df)
+        if df.empty: return None
+        
+        df = calculate_indicators(df)
+        df_clean = df.dropna(subset=['VWAP', 'EMA20', 'Turnover_MA20'])
+        if df_clean.empty: return None
+        
+        curr = df_clean.iloc[-1]
+        if curr['Close'] <= 50 or curr['Turnover_MA20'] < 100000000: return None
+            
+        skor = 0
+        if curr['Close'] > curr['VWAP']: skor += 30
+        if curr['Close'] > curr['EMA20']: skor += 20
+        if 40 < curr['RSI'] < 65: skor += 20
+        elif curr['RSI'] >= 70: skor -= 20
+        
+        if curr['Volume'] > (curr['Vol_MA20'] * 3): skor += 30
+        elif curr['Volume'] > curr['Vol_MA20']: skor += 10
+        
+        if skor >= 60:
+            return {"ticker": ticker, "skor": skor, "harga": float(curr['Close']), "vwap": float(curr['VWAP'])}
+    except Exception: pass
+    return None
+
+@st.cache_data(ttl=60) 
+def scan_top_saham(watchlist):
+    hasil_scan = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(proses_satu_saham, ticker): ticker for ticker in watchlist}
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
+            if result: hasil_scan.append(result)
+    return sorted(hasil_scan, key=lambda x: x['skor'], reverse=True)[:3]
