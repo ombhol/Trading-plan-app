@@ -7,14 +7,13 @@ from datetime import date
 import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
-import concurrent.futures # Ditambahkan untuk Multi-threading
+import concurrent.futures
 import requests
 
 # --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="Trading Plan Pro V7.8", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Trading Plan Pro V7.9", layout="wide", page_icon="🦅")
 
 # --- INIT SESSION (ANTI IP-BAN) ---
-# Membangun sesi HTTP persisten agar tidak dianggap spam/bot oleh firewall YF
 session = requests.Session()
 session.headers.update({
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -22,6 +21,7 @@ session.headers.update({
 
 # --- 1. FUNGSI UTILITAS & INDIKATOR ---
 def sesuaikan_fraksi_bei(harga):
+    """Membulatkan harga ke fraksi harga resmi Bursa Efek Indonesia."""
     harga = int(harga)
     if harga < 50: return 50
     elif harga < 200: fraksi = 1
@@ -32,6 +32,7 @@ def sesuaikan_fraksi_bei(harga):
     return round(harga / fraksi) * fraksi
 
 def calculate_daily_atr(df_1d):
+    """Menghitung nilai ATR (Average True Range) harian."""
     if df_1d.empty or len(df_1d) < 15: return 0
     hl = df_1d['High'] - df_1d['Low']
     hc = np.abs(df_1d['High'] - df_1d['Close'].shift())
@@ -40,6 +41,7 @@ def calculate_daily_atr(df_1d):
     return atr_daily.iloc[-1]
 
 def calculate_indicators(df):
+    """Kalkulasi indikator teknikal utama dengan reset harian VWAP."""
     if df.empty: return df
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['Date'] = df.index.date
@@ -64,7 +66,6 @@ def calculate_indicators(df):
 
 # --- 2. FUNGSI AUTO-SCANNER (MULTI-THREADING ENGINE) ---
 def proses_satu_saham(ticker):
-    """Fungsi worker untuk di-run secara paralel."""
     try:
         df = yf.download(f"{ticker}.JK", period="5d", interval="5m", progress=False, session=session)
         if df.empty: return None
@@ -76,7 +77,6 @@ def proses_satu_saham(ticker):
         
         curr = df_clean.iloc[-1]
         
-        # Filter Saham Gocap & Illiquid
         if curr['Close'] <= 50 or curr['Vol_MA20'] < 1000:
             return None
             
@@ -93,10 +93,9 @@ def proses_satu_saham(ticker):
         pass
     return None
 
-@st.cache_data(ttl=120) # TTL dipercepat menjadi 2 menit agar lebih real-time
+@st.cache_data(ttl=120)
 def scan_top_saham(watchlist):
     hasil_scan = []
-    # Eksekusi secara paralel menggunakan ThreadPoolExecutor
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures = {executor.submit(proses_satu_saham, ticker): ticker for ticker in watchlist}
         for future in concurrent.futures.as_completed(futures):
@@ -128,7 +127,6 @@ def ambil_berita_indonesia(ticker):
 @st.cache_data(ttl=120)
 def get_market_data(ticker):
     try:
-        # Menggunakan session agar tidak kena rate limit
         df_5m = yf.download(f"{ticker}.JK", period="5d", interval="5m", progress=False, session=session)
         df_1d = yf.download(f"{ticker}.JK", period="3mo", interval="1d", progress=False, session=session)
         if not df_5m.empty and isinstance(df_5m.columns, pd.MultiIndex): df_5m.columns = df_5m.columns.get_level_values(0)
@@ -150,7 +148,7 @@ with st.sidebar:
     daftar_pantauan = [s.strip().upper() for s in saham_input_user.split(",") if s.strip()]
 
 # --- 5. UI MAIN: TOP REKOMENDASI ---
-st.title("🦅 TRADING PLAN PRO V7.8 (Enterprise)")
+st.title("🦅 TRADING PLAN PRO V7.9 (Day Trading)")
 st.subheader("🏆 Top 3 Sinyal (Anti-Gocap & Likuid)")
 with st.spinner("Memindai anomali volume & akumulasi secara paralel (Asynchronous)..."):
     top_3 = scan_top_saham(daftar_pantauan)
@@ -264,15 +262,17 @@ if not df_5m.empty and not df_1d.empty:
                 st.error(f"📉 **STOP LOSS STRICT:** Rp {sl:,.0f}")
                 
             with col_rules:
-                st.markdown("### 📝 Validasi Real Market")
-                if tren_harian == "DOWNTREND 🔴": 
-                    st.error("❌ **Trend Hancur:** Melawan arus modal besar.")
+                st.markdown("### 📝 Validasi Real Market (Day Trading)")
+                if tren_harian == "DOWNTREND 🔴" and skor_utama >= 60:
+                    st.warning("⚠️ **REBOUND PLAY (Scalping Only):** Tren makro turun, tapi ada momentum *mark-up* intraday. Wajib *Fast In, Fast Out* (Hit & Run). Dilarang keras menahan barang sampai besok!")
+                elif tren_harian == "DOWNTREND 🔴": 
+                    st.error("❌ **Trend Hancur & Tanpa Momentum:** Melawan arus tanpa ada tanda perlawanan intraday. Skip!")
                 elif lot_by_liquidity < 100:
-                    st.error("❌ **Saham Sepi (Illiquid):** Transaksi sangat tipis. Rawan tidak bisa jualan jika masuk barang.")
+                    st.error("❌ **Saham Sepi (Illiquid):** Transaksi sangat tipis. Rawan tidak bisa jualan (nyangkut) jika masuk barang.")
                 elif persen_kenaikan > 8.0: 
-                    st.error("❌ **Ekstrem FOMO:** Sudah terbang. Jangan jadi pembeli di pucuk.")
+                    st.error("❌ **Ekstrem FOMO:** Harga sudah terbang. Hindari menjadi \"Exit Liquidity\" (tempat jualan) bandar di pucuk.")
                 else: 
-                    st.success("🚀 **Clear for Takeoff:** Trend mendukung, jarak aman, likuiditas memadai.")
+                    st.success("🚀 **Clear for Takeoff:** Trend besar mendukung, akumulasi intraday aktif, likuiditas memadai.")
                     
             st.markdown("---")
             fig = go.Figure()
