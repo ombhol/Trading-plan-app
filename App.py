@@ -202,27 +202,11 @@ with st.sidebar:
     saham_input_user = st.text_input("Daftar Saham:", value="MPMX, ASGR, LPPF, ROTI, CNMA, RALS, TAPG, UNIC, KKGI, CITA, PTBA, UNVR, SPTO, FWCT, LPIN, TLDN, BSSR, ADRO, MARK, TPMA, SGRO, TOTL, ARNA, POWR, HRXA, NRCA, MSTI, EAST, ACES, TOTO, SIDO, AUTO, TLKM")
     daftar_pantauan = [s.strip().upper() for s in saham_input_user.split(",") if s.strip()]
 
-# --- 6. UI MAIN: HEADER & PANDUAN ---
+# --- 6. UI MAIN: HEADER ---
 st.title("🦅 TRADING PLAN PRO V8.2 (Street Smart Edition)")
 
 status_waktu, warna_waktu = cek_waktu_trading()
 getattr(st, warna_waktu)(f"🕒 **Sesi Trading BEI Saat Ini:** {status_waktu}")
-
-# [NEW] PANDUAN PENGGUNAAN (Expander agar rapi)
-with st.expander("📖 **Panduan Cepat (SOP Penggunaan Aplikasi)**", expanded=False):
-    st.markdown("""
-    **Ikuti 5 Langkah Taktis Berikut Sebelum Membeli Saham:**
-    
-    1. **Atur Amunisi (Sidebar Kiri):** Masukkan Total Modal yang siap di-tradingkan dan atur batas persentase *Cut Loss* (Risiko). Biarkan sistem menghitung Lot yang aman untuk Anda.
-    2. **Perhatikan Sesi Jam (Indikator Atas):** * **Pagi (09:00 - 10:00):** Sesi paling agresif. Eksekusi cepat.
-       * **Siang (10:00 - 14:00):** Rawan *sideways* dan *false breakout*. Disarankan *wait & see*.
-       * **Sore (14:00 - 16:00):** Waktu untuk mencari sinyal *Beli Sore Jual Pagi (BSJP)*.
-    3. **Pantau Scanner (Top 3 Sinyal):** Sistem akan menyaring puluhan saham dari Daftar Pantauan untuk mencari saham yang volume intraday-nya meledak (diakumulasi uang pintar).
-    4. **Deep Dive Emiten (Analisis Spesifik):** Jika ada saham menarik di *Top 3*, ketik kode sahamnya di kolom **Analisis Saham Spesifik** di sidebar kiri.
-    5. **Eksekusi Order (Aplikasi Sekuritas):** * **Beli (Entry):** Ikuti harga di *Skenario Entry Anti-Guyur*. Jangan langsung *all-in*, cicil di 2 titik.
-       * **Jumlah Beli:** Patuhi angka di metrik **Safe Lot Size**. Jika dibilang 50 Lot, jangan maksa beli 200 Lot agar tidak tersangkut likuiditas palsu.
-       * **Cut Loss Strict:** Segera buang di aplikasi sekuritas jika harga jatuh menyentuh batas ini. Tanpa kompromi.
-    """)
 
 # --- 7. UI MAIN: TOP REKOMENDASI ---
 st.subheader("🏆 Top 3 Sinyal (Real Turnover > 100 Jt/5 Menit)")
@@ -336,7 +320,7 @@ if not df_5m.empty and not df_1d.empty:
             st.metric("Safe Lot Size", f"{total_lot} Lot", alasan_lot)
             st.metric("Skor Saham", f"{skor_utama} / 100")
         
-        tab1, tab2, tab3 = st.tabs(["📊 Eksekusi Order & Net PnL", "📰 Sentimen & Berita", "Rules"])
+        tab1, tab2, tab3 = st.tabs(["📊 Eksekusi Order & Net PnL", "📰 Sentimen & Berita", "📖 Rules & Panduan"])
         
         with tab1:
             col_plan, col_rules = st.columns([1.5, 1])
@@ -412,10 +396,23 @@ if not df_5m.empty and not df_1d.empty:
                 st.info("Market hening. Tidak ada sentimen berita penggerak.")
                 
         with tab3:
-            st.subheader("⚠️ SOP Day Trader BEI")
+            st.subheader("📖 Panduan Penggunaan & SOP Day Trader BEI")
+            
             st.markdown("""
-            * **Keamanan Anti-Ban:** Sistem telah menggunakan eksekusi asinkronus (yfinance) untuk *Scanner* guna mengamankan server dari blokir IP, sementara bagian analisa mendalam (Deep Dive) di-*inject* presisi *real-time* lewat Google Finance.
-            * **Disiplin Cut Loss:** Eksekusi Stop-Loss tanpa ampun bila harga menyentuh angka 'Stop Loss Strict'.
+            ### 🎯 5 Langkah Eksekusi Taktis
+            1. **Atur Amunisi (Sidebar Kiri):** Masukkan Total Modal yang siap di-tradingkan dan atur batas persentase *Cut Loss* (Risiko). Biarkan sistem menghitung batas lot maksimum yang aman untuk Anda beli.
+            2. **Perhatikan Sesi Jam (Indikator Atas):** * **Pagi (09:00 - 10:00 WIB):** Sesi paling agresif. Volatilitas sangat tinggi, cocok untuk eksekusi kilat.
+               * **Siang (10:00 - 14:00 WIB):** Rawan *sideways* dan *false breakout*. Disarankan untuk menahan diri (*wait & see*).
+               * **Sore (14:00 - 16:00 WIB):** Waktu ideal untuk mencari sinyal akumulasi saham guna strategi Beli Sore Jual Pagi (BSJP).
+            3. **Pantau Scanner (Top 3):** Sistem akan menyaring puluhan saham dari Daftar Pantauan untuk memunculkan emiten yang volume intraday-nya sedang diakumulasi oleh uang pintar.
+            4. **Deep Dive Emiten:** Ketik kode saham incaran dari daftar *Top 3* ke kolom **Analisis Saham Spesifik** di sidebar kiri untuk membedah target harga terperinci.
+            5. **Eksekusi Order (Aplikasi Sekuritas):** Patuhi **Skenario Entry Anti-Guyur** (disarankan mecicil 2 titik) dan pastikan jumlah lot yang Anda input di sekuritas tidak melebihi rekomendasi **Safe Lot Size**.
+
+            ---
+            ### ⚠️ Rules Sistem & Keamanan Portofolio
+            * **Keamanan Anti-Ban (Teknis):** Sistem menggunakan eksekusi asinkronus `yfinance` untuk *Scanner* agar server terhindar dari pemblokiran otomatis, sementara bagian analisa mendalam diinjeksi dengan harga presisi *real-time* langsung dari *Google Finance*.
+            * **Disiplin Cut Loss:** Eksekusi Cut Loss di aplikasi Anda tanpa kompromi bila harga penutupan menyentuh angka **Stop Loss Strict**. Jangan pernah melakukan *averaging down* (menangkap pisau jatuh) saat tren harian berstatus *Downtrend*.
+            * **Validasi Likuiditas Manual:** Meskipun sistem sudah menyaring saham dengan Turnover minimal Rp 100 Juta, Anda **WAJIB** mengecek ketebalan lot *Bid-Offer* dan *Running Trade* secara langsung di aplikasi sekuritas sebelum menekan tombol Hajar Kanan (HAKA).
             """)
 else:
     st.error("Gagal menarik data. Pastikan format ticker benar (contoh: BBCA) dan koneksi server aktif.")
