@@ -199,7 +199,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("### 📋 Daftar Pantauan (Scanner)")
-    saham_input_user = st.text_input("Daftar Saham:", value=" UNVR, SPTO, FWCT, LPIN, TLDN, BSSR, ADRO, MARK, TPMA, SGRO")
+    saham_input_user = st.text_input("Daftar Saham:", value=" MPMX, LPPF, ASGR, ROTI, UNIC, RALS, SPTO, UNVR, TAPG, CITA, ADRO, SGRO, LPIN, PBID, BSSR, POWR, ARNA, TLDN, GHON, TOTL, FWCT, MSTI, TPMA, TOTO, MARK, HEXA, EXCL, SIDO, AUTO, MAHA, BAYU, PTPS ")
     daftar_pantauan = [s.strip().upper() for s in saham_input_user.split(",") if s.strip()]
 
 # --- 6. UI MAIN: HEADER ---
